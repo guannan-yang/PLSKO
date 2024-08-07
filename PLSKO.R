@@ -143,3 +143,28 @@ linear.regression.generator <- function(Y, X){
   Y.hat <- X %*% betas
   return(Y.hat)
 }
+
+# calculate the empirical number of component used for PLS regression by the PC_p1 criterion from Bai and Ng (2002).
+r_criterion <- function(X, rmax = 20){
+  # rmax = 10 # maximum number of factors
+  n = nrow(X)
+  p = ncol(X)
+  
+  PC = matrix(NA,rmax+1,1)
+  SX = scale(X)
+  mXX = SX %*%t(SX)
+  for(k in rmax:0){
+    if (k == 0){
+      PC[k+1,] = sum(SX^2/(n*p))
+    } else 
+      eig <- RSpectra::eigs_sym(mXX, k, which = "LM", sigma = NULL, lower = TRUE)
+    meigvec <- eig$vectors 
+    mF <- sqrt(n) * meigvec       # estimated factors
+    Lam <- (t(mF) %*% SX)/n
+    if(k==rmax){
+      sigma2 = sum((SX-mF %*% Lam)^2)/(n*p)
+    }
+    PC[k+1,] = sum((SX-mF %*% Lam)^2)/(n*p) + k*sigma2*((n+p)/(n*p))*log((n*p)/(n+p))
+  }
+  r = which(PC == min(PC))[1]-1
+}
