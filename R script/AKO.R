@@ -30,6 +30,39 @@ AKO <- function(X, y, n_bootstraps = 25,  ko.method = "PLSKO", mvr = F,
   ))
 }
 
+# AKO with generated knockoff sets as a list
+AKO_with.ko <- function(X, y, Xko.list,
+                    q = 0.05,  w.method = "lasso.lcd", offset = 1,
+                    gamma = 0.3, seed = 1){
+  
+  set.seed(seed)
+  
+  n_bootstraps = length(Xko.list)
+  pvals = matrix(0, ncol(X), n_bootstraps)
+  selected <- list()
+  #Multiple Knockoffs
+  for (i in 1:n_bootstraps) {
+    print(i)
+    
+    ko <- Xko.list[[i]]
+    
+    S <- ko.filter(X = X, Xk = ko, y = y, q = q, method = w.method)
+    
+    pvals[,i] = empirical_pval(S$W, offset = offset)
+    selected[i] <- S
+  }
+  
+  aggregated_pval = apply(pvals, 1, quantile_aggregation, gamma=gamma)
+  
+  threshold = bhq_threshold(aggregated_pval, fdr=q)
+  
+  ako.s <- which(aggregated_pval <= threshold)
+  
+  return(list(s = selected,
+              ako.s = ako.s
+  ))
+}
+
 empirical_pval = function(test_score, offset = 1){
   pvals = c()
   n_features = length(test_score)
