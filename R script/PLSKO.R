@@ -13,8 +13,7 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
     call <- list(thres.abs = threshold.abs,
                  thres.q = threshold.q,
                  ncomp = ncomp,
-                 sparsity = sparsity,
-                 gauss.err = gauss.err)
+                 sparsity = sparsity)
     
     X <- scale(X, center = T, scale = F)
     
