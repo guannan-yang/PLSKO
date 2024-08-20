@@ -12,7 +12,7 @@ AKO <- function(X, y, n_bootstraps = 25,  ko.method = "PLSKO", mvr = F,
     #   ko <- generate_ko_with_julia(X, Sigma = NULL, colMeans(X), method = "maxent", m = 1)$Xko
     # }
     # else ko <- knockoffX.sim(X, method = ko.method, ...)$ko
-    ko = plsko(X, ...)
+    ko = plsko(X, ...)$X_k
     S <- ko.filter(X = X, Xk = ko, y = y, q = q, method = w.method)
 
     pvals[,i] = empirical_pval(S$W, offset = offset)
