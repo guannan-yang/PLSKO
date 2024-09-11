@@ -22,7 +22,7 @@ plsko(
 
 \item{threshold.q}{Optional. A numeric value between 0 and 1 indicating the quantile of the correlation values to use as a threshold.}
 
-\item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is 2.}
+\item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.}
 
 \item{sparsity}{Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).}
 }
