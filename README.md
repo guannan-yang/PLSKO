@@ -4,13 +4,13 @@ Package (in preparation) and source codes used in paper: `PLSKO: a robust knocko
 # Knockoff Steps and Functions Pipeline
 
 ## Genernal Input
-- **Input: X**  
+- **Input: predictor matrix X**  
   Dimensions: `n x p`
   
-- **Input: y**  
+- **Input: response vector y**  
   Dimensions: `n x 1`
   
-- **Target False Discovery Rate (FDR) Level**  
+- **Input: Target False Discovery Rate (FDR) Level**  
   Threshold: `q ∈ (0, 1]`
 
 
