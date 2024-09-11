@@ -14,7 +14,7 @@ Package (in preparation) and source codes used in paper: `PLSKO: a robust knocko
   Threshold: `q ∈ (0, 1]`
 
 
-## Knockoff Framework Main Steps and corresponding functions included in this package
+## Knockoff framework main steps and corresponding functions included in this package
 
 |                                                |                                  |                                              |                                                                                                     | **Pipeline Funs Provided^**  |                                    |
 |------------------------------------------------|----------------------------------|----------------------------------------------|-----------------------------------------------------------------------------------------------------|------------------------------|------------------------------------|
@@ -24,4 +24,4 @@ Package (in preparation) and source codes used in paper: `PLSKO: a robust knocko
 | **Step 3: Knockoff Filtering and Variable Selection**                 | `KO_with_W()` <br>`AKO_with_W()` | -                                             | A list (class _"knockoff.result"_) with components: <br>`X`, `Xk`, `statistic`, `selected`, `index` | :heavy_check_mark:           | :heavy_check_mark:                 |
 
 ### Additional Notes:
-- ^The workflow includes generating knockoff variables, selecting models, and filtering.
+- ^The workflow includes generating knockoff variables, importance score calculation, and filtering.
