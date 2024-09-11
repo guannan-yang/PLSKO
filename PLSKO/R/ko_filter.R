@@ -65,37 +65,8 @@ ko.filter <- function(X, Xk, y, q, method = "lasso.lcd", offset = 0, ...){
 
 ko.withW <- function()
 
-cv_coeffs_glmnet <- function(X, y, nlambda=500, intercept=T, parallel=T, ...) {
-  # Standardize variables
-  X = scale(X)
 
-  n = nrow(X); p = ncol(X)
-
-  if (!methods::hasArg(family) ) family = "gaussian"
-  else family = list(...)$family
-
-  if (!methods::hasArg(lambda) ) {
-    if( identical(family, "gaussian") ) {
-      if(!is.numeric(y)) {
-        stop('Input y must be numeric.')
-      }
-      # Unless a lambda sequence is provided by the user, generate it
-      lambda_max = max(abs(t(X) %*% y)) / n
-      lambda_min = lambda_max / 2e3
-      k = (0:(nlambda-1)) / nlambda
-      lambda = lambda_max * (lambda_min/lambda_max)^k
-    }
-    else {
-      lambda = NULL
-    }
-  }
-
-  cv.glmnet.fit <- glmnet::cv.glmnet(X, y, lambda=lambda, intercept=intercept,
-                                     standardize=F,standardize.response=F, parallel=parallel, ...)
-
-  coef(cv.glmnet.fit, s = "lambda.min")
-}
-
+  
 integer0_test <- function(which){
   if(identical(which, integer(0))){
     return(NULL)
