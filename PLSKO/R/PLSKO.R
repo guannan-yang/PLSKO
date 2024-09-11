@@ -14,9 +14,19 @@
 #' @examples
 #'
 plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1){
-  if(is.data.frame(X)){X = as.matrix(X)}
   n <- nrow(X)
   p <- ncol(X)
+
+  #Input type validation
+  if(is.data.frame(X)){
+    X.name = names(X)
+    X = as.matrix(X)
+  }else if (is.matrix(X)) {
+    X.names = colnames(X)
+  }else {
+    stop('Input X must be a numeric matrix or data frame')
+  }
+  if (!is.numeric(X)) stop('Input X must be a numeric matrix or data frame')
 
 # If nb.list is not provided, generate a neighborhood list based on correlations
 
