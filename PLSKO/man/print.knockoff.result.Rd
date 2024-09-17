@@ -7,7 +7,7 @@
 \method{print}{knockoff.result}(x, plus = F, ...)
 }
 \arguments{
-\item{x}{the output of a call to ko.filter}
+\item{x}{the output of a call to \code{ko_filter}}
 
 \item{...}{unused}
 }

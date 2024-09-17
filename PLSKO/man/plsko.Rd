@@ -18,9 +18,9 @@ plsko(
 
 \item{nb.list}{Optional. A list of length \eqn{p} or adjacency matrix of \eqn{p \times p} that defines the neighbourship of variables. A list of length \eqn{p} should include the neighbours' index of each variable from \eqn{X_1} to \eqn{X_p} in order; The \eqn{i^{th}} element in the list includes the indices of the neighbour variables of \eqn{X_i}, or \code{NULL} when no neighbours. A adjacency matrix should be symmetric with only binary element and  where \eqn{M_{ij} = 1} when \eqn{X_i} and \eqn{X_j} is defined as neighbours; otherwise \eqn{M_{ij} = 0} when not neighbour or on diagonal (i.e. \eqn{i = j}). If not provided or NULL, the neighborhoods are determined based on correlations.}
 
-\item{threshold.abs}{Optional. A value between \eqn{0} and \eqn{1}. A numeric value specifying an absolute correlation threshold to define neighborhoods. If not provided, the function uses \code{threshold.q}.}
+\item{threshold.abs}{Optional. Used when \code{nb.list} is not provided. A value between \eqn{0} and \eqn{1}. A numeric value specifying an absolute value of correlation threshold to define neighborhoods. If not provided, the function uses \code{threshold.q}.}
 
-\item{threshold.q}{Optional. A numeric value between 0 and 1 indicating the quantile of the correlation values to use as a threshold.}
+\item{threshold.q}{Optional. Used when \code{nb.list} and \code{threshold.q} are both not provided. A numeric value between 0 and 1 indicating the quantile of the sample correlation values to use as a threshold.}
 
 \item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.}
 
@@ -31,4 +31,43 @@ A matrix of generated knockoff variables of \eqn{n \times p}
 }
 \description{
 Generate a knockoff variable set with PLSKO using PLS regression
+}
+\examples{
+# Example 1: Default usage
+library(PLSKO)
+set.seed(123)
+n = 100
+p = 10
+X <- matrix(rnorm(n*p), n, p)
+Xk <- plsko(X)
+
+# Example 2: User provided neighbourhood list
+set.seed(123)
+n = 100
+p = 10
+X <- matrix(rnorm(n*p), n, p)
+## When the neighbourhood list of variables is provided as a symmetric adjacency matrix
+p_nb <- 0.1 # probability of having a neighbour
+nb.adj <- matrix(rbinom(p*p, 1, p_nb/2), p, p)
+nb.adj <- nb.adj + t(nb.adj) # make it symmetric
+nb.adj <- ifelse(nb.adj!=0, 1, 0) # make sure it is binary
+diag(nb.adj) <- 0  # make sure diagonal is not a neighbour
+Xk <- plsko(X, nb.list = nb.adj)
+
+## When the neighbourhood list of variables is provided as a list
+set.seed(123)
+n = 100
+p = 10
+X <- matrix(rnorm(n*p), n, p)
+### Generate a random nb.list with 1-3 neighbours for each variable
+nb.list <- list()
+for(i in 1:p){
+ nb.list[[i]] <- sample(1:p, sample(1:3, 1), replace = F)
+ nb.list[[i]] <- nb.list[[i]][nb.list[[i]] != i] # exclude itself
+ }
+ Xk <- plsko(X, nb.list = nb.list)
+
+}
+\references{
+Yang G et al. PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection. 2024:2024.08.06.606935.
 }

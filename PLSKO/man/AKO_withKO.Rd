@@ -10,7 +10,7 @@ AKO_withKO(
   Xko.list,
   q = 0.05,
   w.method = "lasso.lcd",
-  offset = 1,
+  offset = 0,
   gamma = 0.3,
   seed = 1
 )
@@ -20,17 +20,17 @@ AKO_withKO(
 
 \item{y}{A numeric or factor response vector of length \eqn{n}.}
 
-\item{Xko.list}{A list of knockoff variable matrices (\eqn{n \times p}) corresponding to the original matrix `X`.}
+\item{Xko.list}{A list of knockoff variable matrices (\eqn{n \times p}) corresponding to the original matrix \code{X}.}
 
-\item{q}{A numeric value of the target false discovery rate (FDR) level. Default is `0.05`.}
+\item{q}{A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.}
 
-\item{w.method}{A string specifying the method to compute test statistics. Options are `"lasso.lcd"`, `"lasso.logistic"`, `"lasso.max.lambda"`, `"RF"`. Default is `"lasso.lcd"`.}
+\item{w.method}{A string specifying the method to compute test statistics. Options are \code{"lasso.lcd"}, \code{"lasso.logistic"}, \code{"lasso.max.lambda"}, \code{"RF"}. Default is \code{"lasso.lcd"}.}
 
-\item{offset}{A numeric value to specify the adjustment in empirical p-value calculation. Options are `0` or `1`. Default is `1`.}
+\item{offset}{An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.}
 
-\item{gamma}{A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is `0.3`.}
+\item{gamma}{A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is \eqn{0.3}.}
 
-\item{seed}{A numeric value for the random seed. Default is `1`.}
+\item{seed}{A numeric value for the random seed. Default is \eqn{1}.}
 }
 \value{
 A list of class 'AKO.result', containing:

@@ -8,18 +8,14 @@
 #' @param Xk A \eqn{n \times p} numeric matrix of knockoff predictors.
 #' @param y A numeric or factor type repose vector of length \eqn{n}.
 #' @param q A numeric value of the target false discovery rate (FDR) level.
-#' @param method A string specifying the method to compute test statistics. Options include
-#'   `"lasso.lcd"`, `"lasso.max.lambda"`, `"lasso.logistic"`, `"RF"`. Default is `"lasso.lcd"`.
-#' @param offset A numeric or string value to adjust the knockoff threshold. Default is `0` (control modifed FDR). Other options include `1` (yields a slightly more conservative procedure ("knockoffs+") that controls the FDR according to the usual definition) and `"both"` (returns results from both "knockoffs" and "knockoffs+").
-#' @param ... Additional arguments passed to the underlying methods. See functions `stat.lasso_coefdiff`, `stat.lasso_lambdadiff`, `stat.lasso_coefdiff_bin`, `stat.random_forest` in `knockoff` package for more details.
+#' @param w.method A character string specifying the method to compute feature importance statistics. Default is \code{"lasso.lcd"}. Other options include \code{"lasso.logistic"} for binary response variable, \code{"lasso.max.lambda"} for the maximum lambda value for the first entry on the path, and \code{"RF"} for random forest. See \code{\link{ko_filter}} or \code{\link{knockoff::knockoff.filter}} for more details.
+#' @param offset A numeric or string value to adjust the knockoff threshold. Default is \eqn{0} (control modified FDR). Other options include \eqn{1} (yields a slightly more conservative procedure ("knockoffs+") that controls the FDR according to the usual definition) and \code{"both"} (returns results from both "knockoffs" and "knockoffs+").
+#' @param ... Additional arguments passed to the underlying methods. See functions `stat.lasso_coefdiff`, `stat.lasso_lambdadiff`, `stat.lasso_coefdiff_bin`, `stat.random_forest` in `knockoff` package for more details. More options will be provided in the future.
 #'
 #' @return An object of class "knockoff.result". This object is a list
 #'  containing at least the following components:
 #' \describe{
 #'   \item{`call`}{The matched call.}
-#'   \item{`X`}{The original matrix of predictors.}
-#'   \item{`Xk`}{The knockoff matrix of predictors.}
-#'   \item{`y`}{The response vector.}
 #'   \item{`statistic`}{The computed test statistics `W` of length \eqn{p}.}
 #'   \item{`threshold`}{The knockoff threshold used to determine discoveries.}
 #'   \item{`selected`}{The named vector of selected variables.}
@@ -36,10 +32,33 @@
 #'
 #' @examples
 #' # Example usage of ko.filter
-#' result <- ko.filter(X, Xk, y, q = 0.1)
+#' set.seed(123)
+#' X <- matrix(rnorm(100*10), 100, 10)
+#' Xk <- plsko(X) # generate knockoff variables by PLSKO
+#'
+#' # Example 1: continuous response
+#' # randomly assign zero or one as coefficients to the variables
+#' beta <- sample(c(0, 1), 10, replace = TRUE)
+#' y <- X %*% beta + rnorm(100)
+#'
+#' # run the knockoff filter
+#' result <- ko_filter(X, Xk, y, q = 0.1)
+#' print(result)
+#'
+#' # compare with the true coefficients
+#' which(beta != 0)
+#'
+#' # Example 2: knockoff+
+#' result.plus <- ko_filter(X, Xk, y, q = 0.1, offset = 1)
+#' print(result.plus) # return NULL since no variables are selected as a conservative procedure
+#'
+#' # Example 3: binary response
+#' y.bin <- rbinom(100, 1, 1/(1+ exp(-(X %*% beta)))) # convert to binary response
+#' result.bin <- ko_filter(X, Xk, y.bin, q = 0.1,w.method = "lasso.logistic")
+#' print(result.bin)
 #'
 #' @export
-ko.filter <- function(X, Xk, y, q = 0.05, method = "lasso.lcd", offset = 0, ...){
+ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...){
 
   n = nrow(X)
   p = ncol(X)
@@ -63,37 +82,37 @@ ko.filter <- function(X, Xk, y, q = 0.05, method = "lasso.lcd", offset = 0, ...)
   }
 
 
-  if(method == "lasso.lcd"){
+  if(w.method == "lasso.lcd"){
     W <- stat.lasso_coefdiff(X, Xk, y, ...)
   }
-  else if(method == "lasso.max.lambda"){
+  else if(w.method == "lasso.max.lambda"){
     W <- stat.lasso_lambdadiff(X, Xk, y, ...)
   }
-  # else if(method == "pls.regression.lcd"){
+  # else if(w.method == "pls.regression.lcd"){
   #   W <- W_spls_lcd(X, Xk, y, lcd_comp = 1)
   # }
   #
-  # else if(method == "plsda.lcd"){ # exclude when continuous y design
+  # else if(w.method == "plsda.lcd"){ # exclude when continuous y design
   #   W <- W_splsda_lcd(X, Xk, y, lcd_comp = 1)
   # }
-  # else if(method == "spls.regression.lcd"){
+  # else if(w.method == "spls.regression.lcd"){
   #   keepX <- round(ncol(X)*sparsity)+1
   #   W <- W_spls_lcd(X, Xk, y, ncomp = 2, lcd_comp = 1, keepX = rep(keepX, 2))
   # }
-  # else if(method == "splsda.lcd"){ # exclude when continuous y design
+  # else if(w.method == "splsda.lcd"){ # exclude when continuous y design
   #   keepX <- round(ncol(X)*sparsity)+1
   #   W <- W_splsda_lcd(X, Xk, y, ncomp = 2, lcd_comp = 1, keepX = rep(keepX, 2))
   # }
 
-  else if(method == "lasso.logistic"){ # exclude when continuous y design
+  else if(w.method == "lasso.logistic"){ # exclude when continuous y design
     W <- stat.lasso_coefdiff_bin(X, Xk, y, ...)
   }
 
-  else if(method == "RF"){
+  else if(w.method == "RF"){
     W <- stat.random_forest(X, Xk, y)
   }
 
-  result <- ko.withW(W, q = q, offset = offset)
+  result <- ko_withW(W, q = q, offset = offset)
 
   return(result)
 }
@@ -102,24 +121,54 @@ ko.filter <- function(X, Xk, y, q = 0.05, method = "lasso.lcd", offset = 0, ...)
 #'
 #' Computes the knockoff threshold and selects variables based on the computed test statistics.
 #'
-#' @param W A numeric vector of test statistics.
+#' @param W A (named) numeric vector of test statistics. The length of the vector should be equal to the number of variables. The output will be names if this vector is named.
 #' @param q A numeric value specifying the false discovery rate (FDR) level. Default is `0.05`.
-#' @param offset A numeric or string value to adjust the knockoff threshold. Default is `0` (control modifed FDR). Other options include `1` (yields a slightly more conservative procedure ("knockoffs+") that controls the FDR according to the usual definition) and `"both"` (returns results from both "knockoffs" and "knockoffs+").
+#' @param offset  A numeric or string value to adjust the knockoff threshold. Default is \eqn{0} (control modified FDR). Other options include \eqn{1} (yields a slightly more conservative procedure ("knockoffs+") that controls the FDR according to the usual definition) and \code{"both"} (returns results from both "knockoffs" and "knockoffs+").
+#' @param X.names Optional. A character vector of variable names. If provided, the output will be named.
 #'
 #' @return An object of class "knockoff.result". This object is a list
 #'  containing at least the following components:
 #' \describe{
 #'   \item{`call`}{The matched call.}
-#'   \item{`X`}{The original matrix of predictors.}
-#'   \item{`Xk`}{The knockoff matrix of predictors.}
-#'   \item{`y`}{The response vector.}
 #'   \item{`statistic`}{The computed test statistics `W` of length \eqn{p}.}
 #'   \item{`threshold`}{The knockoff threshold used to determine discoveries.}
 #'   \item{`selected`}{The named vector of selected variables.}
 #' }
 #'
+#' @examples
+#' # Example showing self-defined test statistics
+#' set.seed(123)
+#' n = 100
+#' p = 10
+#' # generate random test data that in one group, some random selected variables have a higher mean
+#' X = matrix(rnorm(n*p), n, p)
+#' y = rep(0:1, each = n/2) #assign group
+#' beta = sample(c(0, 1), p, replace = TRUE) # randomly assign zero or one as which variables have higher mean
+#' X[y==1, beta==1] = X[y==1, beta==1] + rnorm(n/2, mean = 2) # add 2 to the mean of the selected variables
+#'
+#' Xk <- plsko(X)
+#'
+#' # generate self-defined test statistics
+#' Z <- abs(apply(X[y==1,], 2, mean) - apply(X[y==0,], 2, mean)) # use difference of means as test statistics
+#' Zk <- abs(apply(Xk[y==1,], 2, mean) - apply(Xk[y==0,], 2, mean))
+#' W <- Z - Zk # compute the difference of test statistics between original and knockoff variables
+#'
+#' # run the knockoff filter
+#' result <- ko_withW(W, q = 0.1)
+#' print(result)
+#' which(beta != 0) # compare with the true coefficients
+#'
+#'
 #' @export
-ko.withW <- function(W, q = 0.05, offset = 0){
+ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
+  if(!is.numeric(W)) stop('Input W must be a numeric vector')
+  if(!is.null(X.names) && length(X.names) != length(W)){
+    stop('Length of X.names must be the same as the length of W')
+  }
+
+  if(!is.null(names(W))& is.null(X.names)) X.names = names(W)
+
+  p = length(W)
   # find the knockoff threshold T
   t = sort(c(0, abs(W)))
 
@@ -189,7 +238,7 @@ ko.withW <- function(W, q = 0.05, offset = 0){
 #'
 #' Prints the list of variables selected by the knockoff filter and the corresponding function call.
 #'
-#' @param x the output of a call to ko.filter
+#' @param x the output of a call to \code{ko_filter}
 #' @param ... unused
 #'
 #' @method print knockoff.result
