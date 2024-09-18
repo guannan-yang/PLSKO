@@ -35,6 +35,7 @@ n = 100
 p = 10
 # generate random test data that in one group, some random selected variables have a higher mean
 X = matrix(rnorm(n*p), n, p)
+colnames(X) = paste0("X", 1:p)
 y = rep(0:1, each = n/2) #assign group
 beta = sample(c(0, 1), p, replace = TRUE) # randomly assign zero or one as which variables have higher mean
 X[y==1, beta==1] = X[y==1, beta==1] + rnorm(n/2, mean = 2) # add 2 to the mean of the selected variables
@@ -45,6 +46,7 @@ Xk <- plsko(X)
 Z <- abs(apply(X[y==1,], 2, mean) - apply(X[y==0,], 2, mean)) # use difference of means as test statistics
 Zk <- abs(apply(Xk[y==1,], 2, mean) - apply(Xk[y==0,], 2, mean))
 W <- Z - Zk # compute the difference of test statistics between original and knockoff variables
+names(W) <- colnames(X)
 
 # run the knockoff filter
 result <- ko_withW(W, q = 0.1)

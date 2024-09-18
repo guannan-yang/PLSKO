@@ -1,10 +1,11 @@
 #' Generate a knockoff variable set with PLSKO using PLS regression
 #'
 #' @importFrom mixOmics spls
+#' @import progress
 #' @param X A numeric matrix or data frame. The original design data matrix with \eqn{n} observations as rows and \eqn{p} variables as columns.
 #' @param nb.list Optional. A list of length \eqn{p} or adjacency matrix of \eqn{p \times p} that defines the neighbourship of variables. A list of length \eqn{p} should include the neighbours' index of each variable from \eqn{X_1} to \eqn{X_p} in order; The \eqn{i^{th}} element in the list includes the indices of the neighbour variables of \eqn{X_i}, or \code{NULL} when no neighbours. A adjacency matrix should be symmetric with only binary element and  where \eqn{M_{ij} = 1} when \eqn{X_i} and \eqn{X_j} is defined as neighbours; otherwise \eqn{M_{ij} = 0} when not neighbour or on diagonal (i.e. \eqn{i = j}). If not provided or NULL, the neighborhoods are determined based on correlations.
 #' @param threshold.abs Optional. Used when \code{nb.list} is not provided. A value between \eqn{0} and \eqn{1}. A numeric value specifying an absolute value of correlation threshold to define neighborhoods. If not provided, the function uses \code{threshold.q}.
-#' @param threshold.q Optional. Used when \code{nb.list} and \code{threshold.q} are both not provided. A numeric value between 0 and 1 indicating the quantile of the sample correlation values to use as a threshold.
+#' @param threshold.q Optional. Used when \code{nb.list} and \code{threshold.q} are both not provided. A numeric value between 0 and 1 indicating the quantile of the sample correlation values to use as a threshold. When not provided, the function uses the 0.80 quantile.
 #' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
 #' @param sparsity Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).
 #'
@@ -127,7 +128,7 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
       threshold <- quantile(unlist(abs(cor_mat)), prob = threshold.q, names = F)
     }
     else {
-      threshold <- quantile(unlist(abs(cor_mat)), prob = 0.90, names = F)
+      threshold <- quantile(unlist(abs(cor_mat)), prob = 0.80, names = F)
     }
 
     # Create a list of neighborhoods based on the correlation threshold
@@ -175,6 +176,12 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
     r_emp <- r_criterion(X, rmax = 5)
   }
 
+  # Initialize the progress bar
+  pb <- progress_bar$new(
+    format = " Generating knockoff variables [:bar] :percent in :elapsed",
+    total = p, clear = FALSE, width = 60
+  )
+
   # Loop over each variable to estimate its conditional distribution
   for (i in 1:p){
     nb <- neighborhoods[[i]][neighborhoods[[i]]!=i] #exclude itself!
@@ -215,6 +222,10 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
     res <- sample(Y.res)
 
     X_k[,i] <- Y.hat + res
+
+    # Update the progress bar
+    pb$tick()
+
   }
 
   # Add the mean back to knockoff variables generated from the centered data

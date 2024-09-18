@@ -38,6 +38,7 @@ Knockoff filter with generated knockoff variable set
 # Example usage of ko.filter
 set.seed(123)
 X <- matrix(rnorm(100*10), 100, 10)
+colnames(X) <- paste0("X", 1:10)
 Xk <- plsko(X) # generate knockoff variables by PLSKO
 
 # Example 1: continuous response

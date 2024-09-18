@@ -1,5 +1,6 @@
 #' Pipeline for the whole knockoff framework with PLSKO generated knockoff variables
 #'
+#' @import progress
 #' @param X A numeric matrix or data frame of predictors.
 #' @param y A numeric vector or factor of responses.
 #' @param q A numeric value specifying the false discovery rate (FDR) level. Default is `0.05`.
@@ -8,7 +9,7 @@
 #' @param nb.list Optional. A list of length \eqn{p} or adjacency matrix of \eqn{p \times p} that defines the neighbourship of variables. A list of length \eqn{p} should include the neighbours' index of each variable from \eqn{X_1} to \eqn{X_p} in order; The \eqn{i^{th}} element in the list includes the indices of the neighbour variables of \eqn{X_i}, or \code{NULL} when no neighbours. A adjacency matrix should be symmetric with only binary element and  where \eqn{M_{ij} = 1} when \eqn{X_i} and \eqn{X_j} is defined as neighbours; otherwise \eqn{M_{ij} = 0} when not neighbour or on diagonal (i.e. \eqn{i = j}). If not provided or NULL, the neighborhoods are determined based on correlations.
 #' @param threshold.abs Optional. A value between \eqn{0} and \eqn{1}. A numeric value specifying an absolute correlation threshold to define neighborhoods. If not provided, the function uses \code{threshold.q}.
 #' @param threshold.q Optional. A numeric value between 0 and 1 indicating the quantile of the correlation values to use as a threshold.
-#' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
+#' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is \code{NULL}, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
 #' @param sparsity Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).
 #'
 #' @param seed An integer seed for reproducibility. Default is 1.
@@ -23,6 +24,20 @@
 #' @export
 #'
 #' @examples
+#' # Example 1: continuous response
+#' set.seed(1)
+#' X <- matrix(rnorm(100*10), 100, 10)
+#' colnames(X) <- paste0("X", 1:10)
+#' # randomly assign zero or one as coefficients to the variables
+#' beta <- sample(c(0, 1), 10, replace = TRUE)
+#' y <- X %*% beta + rnorm(100)
+#'
+#' # run the knockoff filter
+#' result <- plsko_filter(X, y, q = 0.1)
+#' print(result)
+#'
+#' # compare with the true coefficients
+#' which(beta != 0)
 #'
 plsko_filter <- function(X, y, q = 0.05, method = "lasso.lcd", offset = 0,
                          nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1,

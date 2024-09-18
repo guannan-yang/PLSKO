@@ -35,7 +35,7 @@ plsko_filter(
 
 \item{threshold.q}{Optional. A numeric value between 0 and 1 indicating the quantile of the correlation values to use as a threshold.}
 
-\item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.}
+\item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is \code{NULL}, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.}
 
 \item{sparsity}{Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).}
 
@@ -52,4 +52,21 @@ An object of class "knockoff.result". This object is a list containing at least 
 }
 \description{
 Pipeline for the whole knockoff framework with PLSKO generated knockoff variables
+}
+\examples{
+# Example 1: continuous response
+set.seed(1)
+X <- matrix(rnorm(100*10), 100, 10)
+colnames(X) <- paste0("X", 1:10)
+# randomly assign zero or one as coefficients to the variables
+beta <- sample(c(0, 1), 10, replace = TRUE)
+y <- X \%*\% beta + rnorm(100)
+
+# run the knockoff filter
+result <- plsko_filter(X, y, q = 0.1)
+print(result)
+
+# compare with the true coefficients
+which(beta != 0)
+
 }

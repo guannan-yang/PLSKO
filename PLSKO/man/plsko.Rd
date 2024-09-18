@@ -20,7 +20,7 @@ plsko(
 
 \item{threshold.abs}{Optional. Used when \code{nb.list} is not provided. A value between \eqn{0} and \eqn{1}. A numeric value specifying an absolute value of correlation threshold to define neighborhoods. If not provided, the function uses \code{threshold.q}.}
 
-\item{threshold.q}{Optional. Used when \code{nb.list} and \code{threshold.q} are both not provided. A numeric value between 0 and 1 indicating the quantile of the sample correlation values to use as a threshold.}
+\item{threshold.q}{Optional. Used when \code{nb.list} and \code{threshold.q} are both not provided. A numeric value between 0 and 1 indicating the quantile of the sample correlation values to use as a threshold. When not provided, the function uses the 0.80 quantile.}
 
 \item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.}
 

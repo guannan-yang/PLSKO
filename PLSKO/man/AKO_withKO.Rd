@@ -12,7 +12,9 @@ AKO_withKO(
   w.method = "lasso.lcd",
   offset = 0,
   gamma = 0.3,
-  seed = 1
+  seed = 1,
+  parallel = T,
+  ncores = NULL
 )
 }
 \arguments{
@@ -31,6 +33,10 @@ AKO_withKO(
 \item{gamma}{A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is \eqn{0.3}.}
 
 \item{seed}{A numeric value for the random seed. Default is \eqn{1}.}
+
+\item{parallel}{Logical value indicating whether to run the process in parallel. Default is \code{TRUE}.}
+
+\item{ncores}{An integer specifying the number of cores to use for parallel processing. Default is NULL, which uses all available cores except one.}
 }
 \value{
 A list of class 'AKO.result', containing:
@@ -41,11 +47,29 @@ A list of class 'AKO.result', containing:
 }
 }
 \description{
-Performs Aggregated Knockoff analysis with multiple knockoff sets to improve the stability of results.
+Performs Aggregated Knockoff analysis with multiple knockoff sets to improve the stability of results. The function is adapted from Tian et al. (2022).
 }
 \examples{
-# Example usage of AKO_withKO
-result <- AKO_withKO(X, y, Xko.list, q = 0.1)
+# Example
+set.seed(1)
+X <- matrix(rnorm(100*10), 100, 10)
+colnames(X) <- paste0("X", 1:10)
+# randomly assign zero or one as coefficients to the variables
+beta <- sample(c(0, 1), 10, replace = TRUE)
+y <- X \%*\% beta + rnorm(100)
+
+# Generate multiple knockoff sets (using the default knockoff generating function in \code{\link{knockoff::create.second_order}})
+Xko.list <- lapply(1:15, function(i) knockoff::create.second_order(X))
+
+# run the AKO filter
+result <- AKO_withKO(X, y, Xko.list, q = 0.1, ncore = 4)
+print(result)
+
+# check the frequency of selected variables from iterations of single-run knockoffs
+table(unlist(lapply(result$s, function(x) x$selected)))
+
+# compare with the true coefficients
+which(beta != 0)
 
 }
 \references{

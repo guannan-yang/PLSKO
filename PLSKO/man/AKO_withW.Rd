@@ -7,7 +7,7 @@
 AKO_withW(W, q = 0.05, offset = 0, gamma = 0.3)
 }
 \arguments{
-\item{W}{A list of test statistics from multiple knockoff filters.}
+\item{W}{A list of test statistics from multiple knockoff filters. The length of the list should be the number of knockoff copies. Each element in the list should be a numeric vector of length \eqn{p} representing the test statistics.}
 
 \item{q}{A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.}
 
@@ -28,6 +28,30 @@ Performs Aggregated Knockoff analysis using precomputed test statistics `W`.
 }
 \examples{
 # Example usage of AKO_withW
-result <- AKO_withW(W, q = 0.05)
+X <- matrix(rnorm(100*10), 100, 10)
+# randomly assign zero or one as coefficients to the variables
+beta <- sample(c(0, 1), 10, replace = TRUE)
+y <- X \%*\% beta + rnorm(100)
+
+# Generate multiple knockoff sets using PLSKO
+n_ko = 15
+Xko.list <- lapply(1:n_ko, function(i) plsko(X))
+
+# Generate test statistics for each knockoff set using the difference of coefficients from an OLS linear regression
+W <- lapply(Xko.list, function(Xko) {
+ X_new <- cbind(X, Xko)
+ beta <- coef(lm(y ~ X_new - 1)) # run orgianal variables and knockoff variables together into an OLS regression without intercept
+ abs(beta[1:ncol(X)]) - abs(beta[(ncol(X)+1):ncol(X_new)]) # difference of coefficients
+ })
+
+# run the AKO filter
+result <- AKO_withW(W, q = 0.1)
+print(result)
+# check the frequency of selected variables from iterations of single-run knockoffs
+table(unlist(lapply(result$s, function(x) x$selected)))
+
+# compare with the true coefficients
+which(beta != 0)
+
 
 }

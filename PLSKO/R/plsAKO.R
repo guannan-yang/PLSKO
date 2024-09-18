@@ -6,7 +6,8 @@
 #' @import foreach
 #' @import doParallel
 #' @import parallel
-
+#' @import progress
+#'
 #' @param X A numeric matrix or dataframe. The original predictor data matrix with \eqn{n} observations as rows and \eqn{p} variables as columns.
 #' @param y A numeric vector of responses.
 #' @param n_ko An integer specifying the number of knockoff copies to generate by PLSKO. Default is 25.
@@ -14,9 +15,9 @@
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
 #' @param w.method A character string specifying the method to compute feature importance statistics. Default is \code{"lasso.lcd"}. Other options include \code{"lasso.logistic"} for binary response variable, \code{"lasso.max.lambda"} for the maximum lambda value for the first entry on the path, and \code{"RF"} for random forest. See \code{\link{ko_filter}} or \code{\link{knockoff::knockoff.filter}} for more details.
 #' @param gamma A numeric value between 0 and 1 for the quantile aggregation parameter. Default is 0.3.
+#' @param parallel Logical value indicating whether to run the process in parallel. Default is \code{TRUE}.
+#' @param ncores An integer specifying the number of cores to use for parallel processing. Default is NULL, which uses all available cores except one.
 #' @param seed An integer to set the random seed for reproducibility. Default is 1.
-#' @param parallel Logical value indicating whether to run the process in parallel. Default is TRUE.
-#' @param cores An integer specifying the number of cores to use for parallel processing. Default is NULL, which uses all available cores except one.
 #' @param ... Additional arguments passed to the \link[=plsko]{plsko} knockoff-generating function.
 #'
 #' @return A list of class 'AKO.result', containing:
@@ -29,8 +30,9 @@
 #' @examples
 #'
 #' # Example usage of ko.filter
-#' set.seed(123)
+#' set.seed(1)
 #' X <- matrix(rnorm(100*10), 100, 10)
+#' colnames(X) <- paste0("X", 1:10)
 #'
 #' # Example 1: continuous response without parallelisation
 #' # randomly assign zero or one as coefficients to the variables
@@ -68,8 +70,11 @@
 #'
 #' # Example 3: binary response
 #' y.bin <- rbinom(100, 1, 1/(1+ exp(-(X %*% beta)))) # convert to binary response
-#' result.bin <- plsAKO(X, y.bin, n_ko = 15, q = 0.1, w.method = "lasso.logistic")
+#' result.bin <- plsAKO(X, y.bin, n_ko = 15, q = 0.1, w.method = "lasso.logistic", parallel = T, ncores = 4)
 #' print(result.bin)
+#'
+#' # check the frequency of selected variables from iterations of single-run knockoffs
+#' table(unlist(lapply(result.bin$s, function(x) x$selected)))
 #'
 #' @references Yang G et al. PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection. 2024:2024.08.06.606935.
 #' @references Nguyen T-B et al. Aggregation of Multiple Knockoffs. Proceedings of the 37th International Conference on Machine Learning. PMLR, 2020, 7283–93.
@@ -81,7 +86,7 @@
 #'
 plsAKO <- function(X, y, n_ko = 25,
                 q = 0.05, offset = 0, w.method = "lasso.lcd",
-                gamma = 0.3, seed = 1, parallel = T, ncores = NULL, ...){
+                gamma = 0.3, parallel = T, ncores = NULL, seed = 1, ...){
 
   #Input type validation
   if(is.data.frame(X)){
@@ -159,6 +164,13 @@ plsAKO <- function(X, y, n_ko = 25,
    # Initialize matrix to store p-values from each knockoff iteration
    pvals = matrix(0, ncol(X), n_ko)
    selected <- list()
+
+   # Initialize the progress bar
+   pb <- progress_bar$new(
+     format = " Running multiple knockoffs [:bar] :percent in :elapsed",
+     total = n_ko, clear = FALSE, width = 60
+   )
+
     for (i in 1:n_ko) {
       set.seed(seed + i)
       # Generate PLSKO knockoff
@@ -169,6 +181,9 @@ plsAKO <- function(X, y, n_ko = 25,
 
       pvals[,i] = empirical_pval(S$statistic, offset = offset)
       selected[[i]] <- S
+
+      # Update the progress bar
+      pb$tick()
     }
   }
 
@@ -189,7 +204,7 @@ plsAKO <- function(X, y, n_ko = 25,
 
 #' Aggregated Knockoff (AKO) with Generated Knockoff Sets
 #'
-#' Performs Aggregated Knockoff analysis with multiple knockoff sets to improve the stability of results.
+#' Performs Aggregated Knockoff analysis with multiple knockoff sets to improve the stability of results. The function is adapted from Tian et al. (2022).
 #'
 #' @param X A \eqn{n \times p} numeric matrix or data frame of predictors.
 #' @param y A numeric or factor response vector of length \eqn{n}.
@@ -198,6 +213,8 @@ plsAKO <- function(X, y, n_ko = 25,
 #' @param w.method A string specifying the method to compute test statistics. Options are \code{"lasso.lcd"}, \code{"lasso.logistic"}, \code{"lasso.max.lambda"}, \code{"RF"}. Default is \code{"lasso.lcd"}.
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
 #' @param gamma A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is \eqn{0.3}.
+#' @param parallel Logical value indicating whether to run the process in parallel. Default is \code{TRUE}.
+#' @param ncores An integer specifying the number of cores to use for parallel processing. Default is NULL, which uses all available cores except one.
 #' @param seed A numeric value for the random seed. Default is \eqn{1}.
 #'
 #' @return A list of class 'AKO.result', containing:
@@ -208,8 +225,26 @@ plsAKO <- function(X, y, n_ko = 25,
 #' }
 #'
 #' @examples
-#' # Example usage of AKO_withKO
-#' result <- AKO_withKO(X, y, Xko.list, q = 0.1)
+#' # Example
+#' set.seed(1)
+#' X <- matrix(rnorm(100*10), 100, 10)
+#' colnames(X) <- paste0("X", 1:10)
+#' # randomly assign zero or one as coefficients to the variables
+#' beta <- sample(c(0, 1), 10, replace = TRUE)
+#' y <- X %*% beta + rnorm(100)
+#'
+#' # Generate multiple knockoff sets (using the default knockoff generating function in \code{\link{knockoff::create.second_order}})
+#' Xko.list <- lapply(1:15, function(i) knockoff::create.second_order(X))
+#'
+#' # run the AKO filter
+#' result <- AKO_withKO(X, y, Xko.list, q = 0.1, ncore = 4)
+#' print(result)
+#'
+#' # check the frequency of selected variables from iterations of single-run knockoffs
+#' table(unlist(lapply(result$s, function(x) x$selected)))
+#'
+#' # compare with the true coefficients
+#' which(beta != 0)
 #'
 #' @references Nguyen T-B, Chevalier J-A, Thirion B et al. Aggregation of Multiple Knockoffs. Proceedings of the 37th International Conference on Machine Learning. PMLR, 2020, 7283–93.
 #' @references Tian P, Hu Y, Liu Z et al. Grace-AKO: a novel and stable knockoff filter for variable selection incorporating gene network structures. BMC Bioinformatics 2022;23:478.
@@ -217,16 +252,16 @@ plsAKO <- function(X, y, n_ko = 25,
 #'
 # AKO with generated knockoff sets as a list
 AKO_withKO <- function(X, y, Xko.list,
-                        q = 0.05,  w.method = "lasso.lcd", offset = 0,
-                        gamma = 0.3, seed = 1){
+                       q = 0.05,  w.method = "lasso.lcd", offset = 0,
+                       gamma = 0.3, seed = 1, parallel = T, ncores = NULL){
 
-  #Input type validation
+  # Input type validation
   if(is.data.frame(X)){
-    X.name = names(X)
-    X = as.matrix(X)
-  }else if (is.matrix(X)) {
     X.names = colnames(X)
-  }else {
+    X = as.matrix(X)
+  } else if (is.matrix(X)) {
+    X.names = colnames(X)
+  } else {
     stop('Input X must be a numeric matrix or data frame')
   }
   if (!is.numeric(X)) stop('Input X must be a numeric matrix or data frame')
@@ -234,13 +269,13 @@ AKO_withKO <- function(X, y, Xko.list,
   if (!is.factor(y) && !is.numeric(y)) {
     stop('Input y must be either of numeric or factor type')
   }
-  if( is.numeric(y) ) y = as.vector(y)
+  if(is.numeric(y)) y = as.vector(y)
 
-  if(offset!=1 && offset!=0) {
+  if(offset != 1 && offset != 0) {
     stop('Input offset must be either 0 or 1')
   }
 
-  if (!w.method %in% c("lasso.lcd", "lasso.logistic", "lasso.max.lambda", "RF")) stop('Input w.method must be either "lasso.lcd", "lasso.logistic", "lasso.max.lambda" or "RF". Or check function "AKO_withW" for advanced customised W input')
+  if (!w.method %in% c("lasso.lcd", "lasso.logistic", "lasso.max.lambda", "RF")) stop('Input w.method must be either "lasso.lcd", "lasso.logistic", "lasso.max.lambda" or "RF".')
 
   # Check if the number of observations in X is equal to the length of y
   stopifnot(length(y) == nrow(X))
@@ -248,30 +283,68 @@ AKO_withKO <- function(X, y, Xko.list,
   set.seed(seed)
 
   n_ko = length(Xko.list)
-  pvals = matrix(0, ncol(X), n_ko)
-  selected <- list()
-  #Multiple Knockoffs
-  for (i in 1:n_ko) {
-    #print(i)
 
-    ko <- Xko.list[[i]]
+  if(parallel){
+    # Load required packages for parallelization
+    if (!requireNamespace('doParallel', quietly=T)) {
+      warning('doParallel is not installed. Running sequentially.', call.=F, immediate.=T)
+      parallel = F
+    }
+    if (!requireNamespace('foreach', quietly=T)) {
+      warning('foreach is not installed. Running sequentially.', call.=F, immediate.=T)
+      parallel = F
+    }
 
-    S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method)
-
-    pvals[,i] = empirical_pval(S$W, offset = offset)
-    selected[i] <- S
+    if (parallel) {
+      all_cores = parallel::detectCores(all.tests = TRUE, logical = TRUE) - 1
+      if (is.null(ncores)) ncores = all_cores # if not specified, use all cores except one
+      if (ncores > all_cores) {
+        warning(paste("Requested more cores than available. Using", all_cores, "cores"), immediate.=T)
+        ncores = all_cores
+      }
+      if (ncores > 1) {
+        doParallel::registerDoParallel(cores = ncores)
+        parallel = TRUE
+      } else {
+        parallel = FALSE
+      }
+    }
   }
 
+  if (parallel) {
+    # Parallel execution using foreach
+    para.result <- foreach::foreach(i = 1:n_ko, .packages = 'knockoff') %dopar% {
+      ko <- Xko.list[[i]]
+      S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method)
+      pvals = empirical_pval(S$statistic, offset = offset)
+      return(list(pvals = pvals, S = S))
+    }
+    doParallel::stopImplicitCluster()
+
+    # Combine results
+    pvals = do.call(cbind, lapply(para.result, function(x) x$pvals))
+    selected = lapply(para.result, function(x) x$S)
+  } else {
+    # Sequential execution
+    pvals = matrix(0, ncol(X), n_ko)
+    selected <- list()
+    for (i in 1:n_ko) {
+      ko <- Xko.list[[i]]
+      S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method)
+      pvals[,i] = empirical_pval(S$statistic, offset = offset)
+      selected[[i]] <- S
+    }
+  }
+
+  # Aggregation of p-values
   aggregated_pval = apply(pvals, 1, quantile_aggregation, gamma=gamma)
-
   threshold = bhq_threshold(aggregated_pval, fdr=q)
-
   ako.s <- which(aggregated_pval <= threshold)
   names(ako.s) = X.names[ako.s]
 
   result <- structure(list(call = match.call(),
                            selected = selected,
-                           ako.selected = ako.selected,
+                           ako.selected = ako.s,
                            threshold = threshold),
                       class = 'AKO.result')
   return(result)
@@ -281,7 +354,7 @@ AKO_withKO <- function(X, y, Xko.list,
 #'
 #' Performs Aggregated Knockoff analysis using precomputed test statistics `W`.
 #'
-#' @param W A list of test statistics from multiple knockoff filters.
+#' @param W A list of test statistics from multiple knockoff filters. The length of the list should be the number of knockoff copies. Each element in the list should be a numeric vector of length \eqn{p} representing the test statistics.
 #' @param q A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
 #' @param gamma A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is \eqn{0.3}.
@@ -295,7 +368,31 @@ AKO_withKO <- function(X, y, Xko.list,
 #'
 #' @examples
 #' # Example usage of AKO_withW
-#' result <- AKO_withW(W, q = 0.05)
+#' X <- matrix(rnorm(100*10), 100, 10)
+#' # randomly assign zero or one as coefficients to the variables
+#' beta <- sample(c(0, 1), 10, replace = TRUE)
+#' y <- X %*% beta + rnorm(100)
+#'
+#' # Generate multiple knockoff sets using PLSKO
+#' n_ko = 15
+#' Xko.list <- lapply(1:n_ko, function(i) plsko(X))
+#'
+#' # Generate test statistics for each knockoff set using the difference of coefficients from an OLS linear regression
+#' W <- lapply(Xko.list, function(Xko) {
+#'  X_new <- cbind(X, Xko)
+#'  beta <- coef(lm(y ~ X_new - 1)) # run orgianal variables and knockoff variables together into an OLS regression without intercept
+#'  abs(beta[1:ncol(X)]) - abs(beta[(ncol(X)+1):ncol(X_new)]) # difference of coefficients
+#'  })
+#'
+#' # run the AKO filter
+#' result <- AKO_withW(W, q = 0.1)
+#' print(result)
+#' # check the frequency of selected variables from iterations of single-run knockoffs
+#' table(unlist(lapply(result$s, function(x) x$selected)))
+#'
+#' # compare with the true coefficients
+#' which(beta != 0)
+#'
 #'
 #' @export
 AKO_withW <- function(W, q = 0.05, offset = 0, gamma = 0.3){
@@ -308,7 +405,8 @@ AKO_withW <- function(W, q = 0.05, offset = 0, gamma = 0.3){
   #Multiple Knockoffs
   for (i in 1:n_ko) {
     pvals[,i] = empirical_pval(W[[i]], offset = offset)
-    selected[i] <- S
+    S <- ko_withW(W[[i]], q = q)
+    selected[[i]] <- S
   }
 
   aggregated_pval = apply(pvals, 1, quantile_aggregation, gamma=gamma)
@@ -316,7 +414,10 @@ AKO_withW <- function(W, q = 0.05, offset = 0, gamma = 0.3){
   threshold = bhq_threshold(aggregated_pval, fdr=q)
 
   ako.s <- which(aggregated_pval <= threshold)
-  names(ako.s) = X.names[ako.s]
+
+  if(!is.null(names(ako.s))){
+    names(ako.s) = names(W[[1]])[ako.s]
+  }
 
   result <- structure(list(call = match.call(),
                            s = selected,
