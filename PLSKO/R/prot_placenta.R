@@ -1,0 +1,12 @@
+#' Placenta-released Proteins Dataset from a multi-omics study
+#'
+#' An example dataset containing relative abundances of proteins from 36 samples with 36 genes. The dataset is a list with 2 elements: 'abundance' and 'metadata': 'abundance' is a dataframe of proteins abundance with 36 rows (samples) and 36 columns (genes); 'metadata' is a data frame with information about the samples. This proteomics data is from a multiomics pre-eclampsia study (Marić et al. 2022). The proteins are a subset of proteomics data that were inferred released by placenta, according to Degnes et al. (2022)
+#'
+#' @format A list with 2 elements: 'counts' and 'metadata'. 'counts' is a matrix of cell-free RNA counts with 71 rows (samples) and 81 columns (genes). 'metadata' is a data frame with information about the samples.
+#' @source Pre-eclampsia multiomics study: https://github.com/ivanam5/Multiomics_Preeclampsia
+#' @source Placenta-derived proteins study: https://static-content.springer.com/esm/art%3A10.1186%2Fs12916-022-02415-z/MediaObjects/12916_2022_2415_MOESM2_ESM.xlsx
+#'
+#' @references Marić I, Contrepois K, Moufarrej MN et al. Early prediction and longitudinal modeling of preeclampsia from multiomics. PATTER 2022;3, DOI: 10.1016/j.patter.2022.100655.
+#' @references Degnes M-HL, Westerberg AC, Zucknick M et al. Placenta-derived proteins across gestation in healthy pregnancies—a novel approach to assess placental function? BMC Medicine 2022;20:227.
+
+"prot_placenta"
