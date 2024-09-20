@@ -115,6 +115,8 @@ ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...
 
   result <- ko_withW(W, q = q, offset = offset, X.names = X.names)
 
+  # return the function call
+  result$call <- match.call()
   return(result)
 }
 

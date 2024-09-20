@@ -15,6 +15,7 @@ plsko_filter(
   threshold.q = NULL,
   ncomp = NULL,
   sparsity = 1,
+  rmax = 5,
   seed = 1
 )
 }
@@ -38,6 +39,8 @@ plsko_filter(
 \item{ncomp}{Optional. An integer specifying the number of components to use in the PLS regression. Default is \code{NULL}, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.}
 
 \item{sparsity}{Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).}
+
+\item{rmax}{An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.}
 
 \item{seed}{An integer seed for reproducibility. Default is 1.}
 }
@@ -68,5 +71,36 @@ print(result)
 
 # compare with the true coefficients
 which(beta != 0)
+
+# Example 2: binary response
+set.seed(1)
+X <- matrix(rnorm(100*10), 100, 10)
+colnames(X) <- paste0("X", 1:10)
+# randomly assign zero or one as coefficients to the variables
+beta <- sample(c(0, 1), 10, replace = TRUE)
+y <- rbinom(100, 1, plogis(X \%*\% beta))
+
+# run the knockoff filter
+result <- plsko_filter(X, y, q = 0.1, method = "lasso.logistic")
+print(result)
+# compare with the true coefficients
+which(beta != 0)
+
+# Example 3: with neighbourhood information
+set.seed(1)
+X <- matrix(rnorm(100*10), 100, 10)
+colnames(X) <- paste0("X", 1:10)
+# randomly assign zero or one as coefficients to the variables
+beta <- sample(c(0, 1), 10, replace = TRUE)
+y <- X \%*\% beta + rnorm(100)
+
+# define the neighbourhood information
+nb.list <- list(1:2, 2:3, 3:4, 4:5, 5:6, 6:7, 7:8, 8:9, 9:10, NULL) # a list of length 10 ((although in this example we know all variables in X are actually independent)
+# run the knockoff filter
+result <- plsko_filter(X, y, q = 0.1, nb.list = nb.list)
+print(result)
+# compare with the true coefficients
+which(beta != 0)
+
 
 }

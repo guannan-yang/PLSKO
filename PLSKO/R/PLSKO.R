@@ -8,6 +8,7 @@
 #' @param threshold.q Optional. Used when \code{nb.list} and \code{threshold.q} are both not provided. A numeric value between 0 and 1 indicating the quantile of the sample correlation values to use as a threshold. When not provided, the function uses the 0.80 quantile.
 #' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
 #' @param sparsity Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).
+#' @param rmax An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.
 #'
 #' @return A matrix of generated knockoff variables of \eqn{n \times p}
 #'
@@ -25,7 +26,7 @@
 #' n = 100
 #' p = 10
 #' X <- matrix(rnorm(n*p), n, p)
-#' ## When the neighbourhood list of variables is provided as a symmetric adjacency matrix
+#' ## When the neighbourhood list of variables is provided as a symmetric adjacency matrix (although in this example all variables in X are independent)
 #' p_nb <- 0.1 # probability of having a neighbour
 #' nb.adj <- matrix(rbinom(p*p, 1, p_nb/2), p, p)
 #' nb.adj <- nb.adj + t(nb.adj) # make it symmetric
@@ -38,7 +39,7 @@
 #' n = 100
 #' p = 10
 #' X <- matrix(rnorm(n*p), n, p)
-#' ### Generate a random nb.list with 1-3 neighbours for each variable
+#' ### Generate a random nb.list with 1-3 neighbours for each variable (although in this example all variables in X are independent)
 #' nb.list <- list()
 #' for(i in 1:p){
 #'  nb.list[[i]] <- sample(1:p, sample(1:3, 1), replace = F)
@@ -49,7 +50,7 @@
 #' @references Yang G et al. PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection. 2024:2024.08.06.606935.
 #' @export
 
-plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1){
+plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1, rmax = 5){
   n <- nrow(X)
   p <- ncol(X)
   mu <- colMeans(X)
@@ -173,7 +174,7 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
 
   # If ncomp is not provided, set it the minimum of p/2 and the empirical number of components
   if(is.null(ncomp)){
-    r_emp <- r_criterion(X, rmax = 5)
+    r_emp <- r_criterion(X, rmax = rmax)
   }
 
   # Initialize the progress bar

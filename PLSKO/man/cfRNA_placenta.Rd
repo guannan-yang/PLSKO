@@ -3,7 +3,7 @@
 \docType{data}
 \name{cfRNA_placenta}
 \alias{cfRNA_placenta}
-\title{Cell-free RNA with elevated expression in the placenta}
+\title{Cell-free RNA-seq dataset with elevated expression in the placenta}
 \format{
 A list with 2 elements: 'counts' and 'metadata'. 'counts' is a matrix of cell-free RNA counts with 71 rows (samples) and 81 columns (genes). 'metadata' is a data frame with information about the samples.
 }

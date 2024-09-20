@@ -19,7 +19,10 @@ knitr::opts_chunk$set(
 ```
 
 ## Introduction
-This vignette illustrates the basic usage of the \code{PLSKO} package to select important variables in omics data. PLSKO is a method that combines partial least squares (PLS) regression with knockoff filtering to select important variables in high-dimensional biological data with false discovery rate (FDR) control. The package provides functions to generate the knockoff variables, perform the knockoff filtering and aggregate multiple knockoff results.
+This vignette illustrates the basic usage of the \code{PLSKO} package to select important variables in omics data. PLSKO is a method that combines partial least squares (PLS) regression with knockoff filtering to select important variables in high-dimensional biological data with false discovery rate (FDR) control. The package provides functions to generate the knockoff variables, perform the knockoff filtering and aggregate multiple knockoff results. The package is designed to be user-friendly and flexible, allowing users to easily apply the PLSKO method to their own data. 
+
+### Overview of the knockoff framework
+
 
 Here is the outline of the functions corresponding to the workflow of knockoff framework:
 
@@ -40,6 +43,65 @@ devtools::install_github("guannan-yang/PLSKO/PLSKO")
 
 library(PLSKO)
 ```
+## Example 1: Simulated data
+In this example, we generate a simulated dataset and response variable and then show how to apply the PLSKO method to select important variables.
+```{r eg1_generate}
+set.seed(1234)
+n = 100 # number of samples
+p = 200 # number of variables ( p > n, high-dimensional setting )
+k = 25 # number of important variables with nonzeros coefficients
+a = 5 # coefficient for important variables
 
-## Example 1: Simulated Data with Continuous Response
+# generate the variables from a multivariate normal distribution
+mu = rep(0, p)
+rho = 0.5
+Sigma = toeplitz(rho^(0:(p-1))) # we define a covariance matrix with an AR(1) structure
+X = MASS::mvrnorm(n, mu, Sigma)
+
+# generate a continuous response variable from a linear model
+nonzero = sample(1:p, k)
+beta = a * (1:p %in% nonzero) / sqrt(n)
+y = X %*% beta + rnorm(n)
+
+# generate a binary response variable from a logistic model
+y_bin = rbinom(n, 1, plogis(X %*% beta))
+```
+
+In the generated X matrix, the variables are correlated with an AR(1) structures (i.e., each entry $\rho_{ij} = \rho^{|ij|}$), which means correlations to be higher between variables that are closer to each other. (And we will use this information to define the neighbourhoods of variables in the PLSKO method in the following example.)
+
+We then generate the response variable y from a linear model with 25 important variables and 175 unimportant variables. The important variables have non-zero coefficients, while the unimportant variables have zero coefficients.
+
+Next, we apply the PLSKO method to select important variables in the simulated data.
+
+### PLSKO pipeline: apply knockoff framework with PLSKO-generated knockoff in a single function
+
+If you are new to knockoff, we can use the \code{plsko_filter} function to perform the knockoff filtering. 
+
+First let's run with the default settings. With the default settings, the function requires the predictor matrix \code{X}, the response vector \code{y} as input arguments. And it returns an object of class \code{knockoff.result}. You can print the result to see the selected variables.
+
+```{r eg1_plsko_pipeline_continous}
+# run the knockoff filter with default settings
+result = plsko_filter(X, y) 
+print(result)
+
+# compare with the true coefficients
+which(beta != 0)
+# calculate FDP in this run
+fdp <- function(result) {
+  sum(beta[result$selected] ==0) / max(length(result$selected), 1)
+}
+fdp(result)
+
+```
+
+The default settings, which are: neighbourhoods are determined based on 80-quantile of the sample correlations, the number of components is determined empirically by the \eqn{PC_p1} criterion, and the sparsity level is set to 1 (no sparsity). The result shows that the PLSKO method successfully selected the 25 important variables with a false discovery proportion (FDP) of 0.0.
+
+ We first generate the knockoff variables using the \code{plsko} function, then calculate the importance scores using the \code{plsAKO} function, and finally perform the knockoff filtering using the \code{KO_with_W} function.
+ 
+## Example 2: Semi-synthetic data with continuous response
+In this example, we generate a semi-synthetic dataset with continuous response and apply the PLSKO method to select important variables in biological data.
+
+```{r}
+
+```
 
