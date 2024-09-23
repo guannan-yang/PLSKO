@@ -82,6 +82,14 @@ ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...
     stop('Input offset must be either 0, 1, or both')
   }
 
+  if(w.method == "lasso.lcd" & is.factor(y)){
+    warning('lasso.lcd is not applicable for categorical response variable, change to lasso.logistic')
+    w.method = "lasso.logistic"
+  }
+  if(w.method == "lasso.logistic" & !is.factor(y)){
+    warning('lasso.logistic is not applicable for continuous response variable, change to lasso.lcd')
+    w.method = "lasso.lcd"
+  }
 
   if(w.method == "lasso.lcd"){
     W <- stat.lasso_coefdiff(X, Xk, y, ...)

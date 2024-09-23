@@ -9,6 +9,7 @@
 #' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
 #' @param sparsity Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).
 #' @param rmax An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.
+#' @param seed An integer seed for reproducibility. Default is 1.
 #'
 #' @return A matrix of generated knockoff variables of \eqn{n \times p}
 #'
@@ -50,7 +51,9 @@
 #' @references Yang G et al. PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection. 2024:2024.08.06.606935.
 #' @export
 
-plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1, rmax = 5){
+plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1, rmax = 5, seed = 1){
+  set.seed(seed)
+
   n <- nrow(X)
   p <- ncol(X)
   mu <- colMeans(X)

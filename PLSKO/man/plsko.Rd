@@ -11,7 +11,8 @@ plsko(
   threshold.q = NULL,
   ncomp = NULL,
   sparsity = 1,
-  rmax = 5
+  rmax = 5,
+  seed = 1
 )
 }
 \arguments{
@@ -28,6 +29,8 @@ plsko(
 \item{sparsity}{Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).}
 
 \item{rmax}{An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.}
+
+\item{seed}{An integer seed for reproducibility. Default is 1.}
 }
 \value{
 A matrix of generated knockoff variables of \eqn{n \times p}

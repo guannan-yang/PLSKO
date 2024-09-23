@@ -448,9 +448,9 @@ using the following code:</p>
 <span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt; Warning: restored &#39;RSpectra&#39;</span></span>
 <span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt; The downloaded binary packages are in</span></span>
-<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;  C:\Users\guannany\AppData\Local\Temp\RtmpwpfNY3\downloaded_packages</span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;  C:\Users\guannany\AppData\Local\Temp\Rtmp0u5BxL\downloaded_packages</span></span>
 <span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt; ── R CMD build ─────────────────────────────────────────────────────────────────</span></span>
-<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt; * checking for file &#39;C:\Users\guannany\AppData\Local\Temp\RtmpwpfNY3\remotes4c942ad77cef\guannan-yang-PLSKO-281605c\PLSKO/DESCRIPTION&#39; ... OK</span></span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt; * checking for file &#39;C:\Users\guannany\AppData\Local\Temp\Rtmp0u5BxL\remotes27a81ca126ff\guannan-yang-PLSKO-4ff0a9f\PLSKO/DESCRIPTION&#39; ... OK</span></span>
 <span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt; * preparing &#39;PLSKO&#39;:</span></span>
 <span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt; * checking DESCRIPTION meta-information ... OK</span></span>
 <span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt; * checking for LF line-endings in source and make files and shell scripts</span></span>
@@ -459,7 +459,14 @@ using the following code:</p>
 <span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="co">#&gt; Warning: package &#39;PLSKO&#39; is in use and will not be installed</span></span>
 <span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a></span>
-<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="fu">library</span>(PLSKO)</span></code></pre></div>
+<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="fu">library</span>(PLSKO)</span>
+<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a></span>
+<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:</span></span>
+<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a><span class="co"># install.packages(c(&quot;knockoff&quot;,&quot;progress&quot;, &quot;parallel&quot;, &quot;doParallel&quot;, &quot;foreach&quot;))</span></span>
+<span id="cb2-41"><a href="#cb2-41" tabindex="-1"></a><span class="co">#</span></span>
+<span id="cb2-42"><a href="#cb2-42" tabindex="-1"></a><span class="co"># if (!require(&quot;BiocManager&quot;, quietly = TRUE))</span></span>
+<span id="cb2-43"><a href="#cb2-43" tabindex="-1"></a><span class="co">#     install.packages(&quot;BiocManager&quot;)</span></span>
+<span id="cb2-44"><a href="#cb2-44" tabindex="-1"></a><span class="co"># BiocManager::install(&quot;mixOmics&quot;)</span></span></code></pre></div>
 </div>
 <div id="example-1-simulated-data" class="section level2">
 <h2>Example 1: Simulated data</h2>
@@ -483,8 +490,8 @@ variables.</p>
 <span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>beta <span class="ot">=</span> a <span class="sc">*</span> (<span class="dv">1</span><span class="sc">:</span>p <span class="sc">%in%</span> nonzero) <span class="sc">/</span> <span class="fu">sqrt</span>(n)</span>
 <span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>y <span class="ot">=</span> X <span class="sc">%*%</span> beta <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
 <span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a></span>
-<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co"># generate a binary response variable from a logistic model</span></span>
-<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>y_bin <span class="ot">=</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(X <span class="sc">%*%</span> beta))</span></code></pre></div>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co"># generate a binary response variable from binomial with sigmoid function as the probability</span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>y_bin <span class="ot">=</span> <span class="fu">as.factor</span>(<span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(X <span class="sc">%*%</span> beta)))</span></code></pre></div>
 <p>In the generated X matrix, the variables are correlated with an AR(1)
 structures (i.e., each entry <span class="math inline">\(\rho_{ij} =
 \rho^{|ij|}\)</span>), which means correlations to be higher between
@@ -502,6 +509,8 @@ simulated data.</p>
 knockoff in a single function</h3>
 <p>If you are new to knockoff, we can use the function to perform the
 knockoff filtering.</p>
+<div id="default-settings" class="section level4">
+<h4>Default settings</h4>
 <p>First let’s run with the default settings. With the default settings,
 the function requires the predictor matrix , the response vector as
 input arguments. And it returns an object of class . You can print the
@@ -519,18 +528,180 @@ result to see the selected variables.</p>
 <span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="fu">which</span>(beta <span class="sc">!=</span> <span class="dv">0</span>)</span>
 <span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;  [1]   2   3   4  19  41  42  44  45  57  58  93  99 102 104 116 126 129 137 138</span></span>
 <span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; [20] 144 149 172 181 189 199</span></span>
-<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co"># calculate FDP in this run</span></span>
-<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>fdp <span class="ot">&lt;-</span> <span class="cf">function</span>(result) {</span>
-<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>  <span class="fu">sum</span>(beta[result<span class="sc">$</span>selected] <span class="sc">==</span><span class="dv">0</span>) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">length</span>(result<span class="sc">$</span>selected), <span class="dv">1</span>)</span>
-<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>}</span>
-<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
-<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt; [1] 0.1</span></span></code></pre></div>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co"># calculate FDP in this run</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>fdp <span class="ot">&lt;-</span> <span class="cf">function</span>(result) {</span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>  <span class="fu">sum</span>(beta[result<span class="sc">$</span>selected] <span class="sc">==</span><span class="dv">0</span>) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">length</span>(result<span class="sc">$</span>selected), <span class="dv">1</span>)</span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>}</span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt; [1] 0.1</span></span></code></pre></div>
 <p>The default settings, which are: neighbourhoods are determined based
 on 80-quantile of the sample correlations, the number of components is
-determined empirically by the criterion, and the sparsity level is set
-to 1 (no sparsity). The result shows that the PLSKO method successfully
-selected the 25 important variables with a false discovery proportion
-(FDP) of 0.0.</p>
+determined empirically by the criterion (minimum 2), and the sparsity
+level is set to 1 (no sparsity) for PLS regression and the target FDR
+level is 0.05. The result shows that the PLSKO method selected the 9
+important variables with a false discovery proportion (FDP) of 0.1,
+which is a little higher than the target FDR level of 0.05. This might
+due to the small sample size and the high-dimensional setting, modified
+FDR control by <code>offset = 0</code> is used in this run, lack of
+specified neighbourhood information, or purely randomness in knockoff
+variable generating (given knockoff frame work only ensure FDR control
+as an expectation of FDP, which might fluctuate in different runs).</p>
+</div>
+<div id="customized-settings-1-customised-neighbourhood-information" class="section level4">
+<h4>Customized settings 1: Customised neighbourhood information</h4>
+<p>You can also customize the settings of the PLSKO method by specifying
+the parameters in the function. For example, you can specify the
+neighbourhood information, the number of components, the sparsity level
+in PLS regression, and the target FDR level, etc.</p>
+<p>First, we define the neighbourhood information based on the AR(1)
+structure of the variables (which we know is true in this case, in real
+data, you might need to estimate the neighbourhood information from the
+data or make some assumptions based on domain knowledge). Specifically,
+we define the neighbourhood of each variable as the variables that are
+within a distance of 3 variables from the variable.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># define the neighbourhood information based on the AR(1) structure of the variables</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="co"># Option 1: define the neighbourhood as a list of length p</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>nb.list <span class="ot">=</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span>p, <span class="cf">function</span>(i){</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="fu">c</span>((i<span class="dv">-3</span>)<span class="sc">:</span>(i<span class="dv">-1</span>), (i<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>(i<span class="sc">+</span><span class="dv">3</span>))</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>})</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co"># remove the indices that are out of the range</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>nb.list <span class="ot">=</span> <span class="fu">lapply</span>(nb.list, <span class="cf">function</span>(x) x[x <span class="sc">&gt;</span> <span class="dv">0</span> <span class="sc">&amp;</span> x <span class="sc">&lt;=</span> p])</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co"># Then, we run the PLSKO method with the customized neighbourhood information. </span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsko_filter</span>(X, y, <span class="at">nb.list =</span> nb.list)</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt; plsko_filter(X = X, y = y, nb.list = nb.list)</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="co">#&gt; [1]  41 104 189</span></span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a></span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a><span class="co"># Option 2: define the neighbourhood as an adjacency matrix</span></span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a>nb.mat <span class="ot">=</span> <span class="fu">matrix</span>(<span class="dv">0</span>, p, p)</span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a><span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>p){</span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a>  <span class="co"># make sure the indices are within the range</span></span>
+<span id="cb5-24"><a href="#cb5-24" tabindex="-1"></a>  nb <span class="ot">=</span> (i<span class="dv">-3</span>)<span class="sc">:</span>(i<span class="sc">+</span><span class="dv">3</span>)</span>
+<span id="cb5-25"><a href="#cb5-25" tabindex="-1"></a>  nb <span class="ot">=</span> nb[nb <span class="sc">&gt;</span> <span class="dv">0</span> <span class="sc">&amp;</span> nb <span class="sc">&lt;=</span> p]</span>
+<span id="cb5-26"><a href="#cb5-26" tabindex="-1"></a>  nb.mat[i, nb] <span class="ot">=</span> <span class="dv">1</span></span>
+<span id="cb5-27"><a href="#cb5-27" tabindex="-1"></a>}</span>
+<span id="cb5-28"><a href="#cb5-28" tabindex="-1"></a><span class="fu">isSymmetric</span>(nb.mat) <span class="co"># check if the matrix is symmetric</span></span>
+<span id="cb5-29"><a href="#cb5-29" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb5-30"><a href="#cb5-30" tabindex="-1"></a></span>
+<span id="cb5-31"><a href="#cb5-31" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsko_filter</span>(X, y, <span class="at">nb.list =</span> nb.mat)</span>
+<span id="cb5-32"><a href="#cb5-32" tabindex="-1"></a><span class="co">#&gt; Warning in plsko(X, nb.list = nb.list, threshold.abs = threshold.abs,</span></span>
+<span id="cb5-33"><a href="#cb5-33" tabindex="-1"></a><span class="co">#&gt; threshold.q = threshold.q, : Input nb.list must have 0 on the diagonal. Setting</span></span>
+<span id="cb5-34"><a href="#cb5-34" tabindex="-1"></a><span class="co">#&gt; diagonal to 0.</span></span>
+<span id="cb5-35"><a href="#cb5-35" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb5-36"><a href="#cb5-36" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb5-37"><a href="#cb5-37" tabindex="-1"></a><span class="co">#&gt; plsko_filter(X = X, y = y, nb.list = nb.mat)</span></span>
+<span id="cb5-38"><a href="#cb5-38" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-39"><a href="#cb5-39" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb5-40"><a href="#cb5-40" tabindex="-1"></a><span class="co">#&gt; [1]  41 104 189</span></span>
+<span id="cb5-41"><a href="#cb5-41" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb5-42"><a href="#cb5-42" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>These two options are equivalent, and you can choose the one that is
+more convenient for you. The result shows that the PLSKO method selected
+3 important variables with a FDP of 0, however the power is low in this
+run.</p>
+</div>
+<div id="customized-settings-2-customised-number-of-components-and-sparsity-level" class="section level4">
+<h4>Customized settings 2: Customised number of components and sparsity
+level</h4>
+<p>You can also specify the number of components and the sparsity level
+in the PLS regression. For example, you can set the number of components
+to 3 and the sparsity level to 0.9.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># run the PLSKO method with the number of components set to 3 and the sparsity level set to 0.9, which means 90% of the coefficients in PLS regression are zero on each component.</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsko_filter</span>(X, y, <span class="at">ncomp =</span> <span class="dv">3</span>, <span class="at">sparsity =</span> <span class="fl">0.9</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; plsko_filter(X = X, y = y, ncomp = 3, sparsity = 0.9)</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; [1]   2  41  42 102 104 116 137</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>We observed that the PLSKO method selected 7 important variables (out
+of 25) with a FDP of 0, with increased power compared to the previous
+run.</p>
+</div>
+<div id="customized-settings-3-binary-response" class="section level4">
+<h4>Customized settings 3: Binary response</h4>
+<p>You can also apply the PLSKO method to a binary response variable. In
+this case, you need to specify the method to compute the test
+statistics. For example, you can set the method to “lasso.logistic” to
+use the difference of coefficients in LASSO logistic regression. Or
+without specifying, <code>plsko_pipeline</code> will automatically
+adjust the method based on the response type.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># run the knockoff filter with default settings for binary response</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsko_filter</span>(X, y_bin)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; Warning in ko_filter(X, Xk, y, q = q, method = method, offset = offset):</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; lasso.lcd is not applicable for categorical response variable, change to</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt; lasso.logistic</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; plsko_filter(X = X, y = y_bin)</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [1]  18  20  41  44 145 149</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; [1] 0.5</span></span></code></pre></div>
+<p>We observed <code>NULL</code> in the result, which means no variable
+is selected in this run. This might be due to the small sample size. In
+binary response, given more randomness in the response, the power of the
+PLSKO method is generally lower than in continuous response, and you
+might need a larger sample size to achieve good power.</p>
+</div>
+</div>
+<div id="pls-ako-pipeline-aggregate-multiple-knockoff-results-from-plsko-method" class="section level3">
+<h3>PLS-AKO pipeline: aggregate multiple knockoff results from
+<code>PLSKO</code> method</h3>
+<p>Given the randomness in the knockoff variable generation and the PLS
+regression, the results of the PLSKO method might vary in different
+runs. To improve the stability and power of the variable selection, you
+can aggregate multiple knockoff results using the PLS-AKO method. We
+only show the default settings here, you can also customize the settings
+in the function, such as the number of iterations (<code>n_ko</code>)
+and other parameters similar to the function. The default setting is to
+run 25 iterations of the PLSKO method and aggregate the results using
+the PLS-AKO method. We provide options of parallel computing (default)
+in the function, which can significantly reduce the computation time
+when running multiple iterations.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co"># run the PLS-AKO method with default settings</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsAKO</span>(X, y)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt; plsAKO(X = X, y = y)</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; Selected variables (AKO):</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt; [1]   2  41  57  99 102 104 137</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt; Frequency of selected variables from 25 iterations of single-run knockoffs:</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt;   2   3   4  19  22  23  41  42  44  45  50  57  58  93  94  99 102 104 116 127 </span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt;  10   3   5   1   1   7  17   8   5   5   2  14   1   5   3  13  10  14   5   2 </span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; 137 149 168 172 189 </span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt;  20   1   1   5   3</span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co"># Binary response</span></span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsAKO</span>(X, y_bin)</span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a><span class="co">#&gt; plsAKO(X = X, y = y_bin)</span></span>
+<span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a><span class="co">#&gt; Selected variables (AKO):</span></span>
+<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a><span class="co">#&gt; [1]  13  18  20  44 149 172</span></span>
+<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a><span class="co">#&gt; Frequency of selected variables from 25 iterations of single-run knockoffs:</span></span>
+<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a><span class="co">#&gt;   3  13  18  20  41  44  95 145 149 157 159 162 172 178 </span></span>
+<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a><span class="co">#&gt;   1  10  12  23   8  21   6   8  13   1   1   3  11   2</span></span>
+<span id="cb8-30"><a href="#cb8-30" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb8-31"><a href="#cb8-31" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>The result shows that the PLS-AKO method selected 7 important
+variables with a FDP of 0,</p>
 <p>We first generate the knockoff variables using the function, then
 calculate the importance scores using the function, and finally perform
 the knockoff filtering using the function.</p>

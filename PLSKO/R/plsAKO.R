@@ -449,6 +449,9 @@ print.AKO.result <- function(x, ...) {
 
   cat('\nSelected variables (AKO):\n')
   print(x$ako.s)
+
+  cat('Frequency of selected variables from',length(x$s),'iterations of single-run knockoffs:\n')
+  print(table(unlist(lapply(x$s, function(x) x$selected))))
 }
 
 
