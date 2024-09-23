@@ -211,7 +211,7 @@ ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
   # set of discovered variables
   S = integer0_test(which(W >= T))
 
-  if (!is.null(X.names))
+  if (!is.null(X.names) & !is.null(S))
     names(S) = X.names[S]
 
   if(offset == "both"){

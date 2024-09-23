@@ -110,6 +110,15 @@ plsAKO <- function(X, y, n_ko = 25,
 
   if (!w.method %in% c("lasso.lcd", "lasso.logistic", "lasso.max.lambda", "RF")) stop('Input w.method must be either "lasso.lcd", "lasso.logistic", "lasso.max.lambda" or "RF". Or check function "AKO_withW" for advanced customised W input')
 
+  if(w.method == "lasso.lcd" & is.factor(y)){
+    warning('lasso.lcd is not applicable for categorical response variable, change to lasso.logistic')
+    w.method = "lasso.logistic"
+  }
+  if(w.method == "lasso.logistic" & !is.factor(y)){
+    warning('lasso.logistic is not applicable for continuous response variable, change to lasso.lcd')
+    w.method = "lasso.lcd"
+  }
+
   # Check if the number of observations in X is equal to the length of y
   stopifnot(length(y) == nrow(X))
 
@@ -144,9 +153,9 @@ plsAKO <- function(X, y, n_ko = 25,
 
     if(parallel){
     para.result <- foreach::foreach(i = 1:n_ko, .packages = 'knockoff') %dopar% {
-          set.seed(seed + i)
+          set.seed(seed + i-1)
           # Generate PLSKO knockoff
-          ko = plsko(X, ...)
+          ko = plsko(X, seed = seed+i-1, ...)
 
           # Calculate the apply knokcoff filter
           S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method, cores = 1)
@@ -172,9 +181,9 @@ plsAKO <- function(X, y, n_ko = 25,
    )
 
     for (i in 1:n_ko) {
-      set.seed(seed + i)
+      set.seed(seed + i-1 )
       # Generate PLSKO knockoff
-      ko = plsko(X, ...)
+      ko = plsko(X, seed = seed+i-1, ...)
 
       # Calculate the apply knokcoff filter
       S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method)

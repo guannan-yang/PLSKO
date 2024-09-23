@@ -9,7 +9,7 @@ knitr::opts_chunk$set(
 
 ## ----installation-------------------------------------------------------------
 # install.packages("devtools")
-devtools::install_github("guannan-yang/PLSKO/PLSKO")
+devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE, upgrade = "never")
 
 library(PLSKO)
 
@@ -22,9 +22,9 @@ library(PLSKO)
 
 
 ## ----eg1_generate-------------------------------------------------------------
-set.seed(1234)
+set.seed(1)
 n = 100 # number of samples
-p = 200 # number of variables ( p > n, high-dimensional setting )
+p = 150 # number of variables ( p > n, high-dimensional setting )
 k = 25 # number of important variables with nonzeros coefficients
 a = 5 # coefficient for important variables
 
@@ -52,7 +52,9 @@ which(beta != 0)
 
 # calculate FDP in this run
 fdp <- function(result) {
-  sum(beta[result$selected] ==0) / max(length(result$selected), 1)
+  if(class(result) == "knockoff.result") fdr = sum(beta[result$selected] ==0) / max(length(result$selected), 1)
+  else if (class(result) == "AKO.result") fdr = sum(beta[result$ako.s] ==0) / max(length(result$ako.s), 1)
+  return(fdr)
 }
 fdp(result)
 
@@ -87,7 +89,7 @@ fdp(result)
 
 ## ----costumised_ncomp---------------------------------------------------------
 # run the PLSKO method with the number of components set to 3 and the sparsity level set to 0.9, which means 90% of the coefficients in PLS regression are zero on each component.
-result = plsko_filter(X, y, ncomp = 3, sparsity = 0.9)
+result = plsko_filter(X, y, ncomp = 3, sparsity = 0.95)
 print(result)
 fdp(result)
 
@@ -103,11 +105,27 @@ result = plsAKO(X, y)
 print(result)
 fdp(result)
 
-# Binary response
-result = plsAKO(X, y_bin)
-print(result)
-fdp(result)
+#Binary response
+# result = plsAKO(X, y_bin)
+# print(result)
+# fdp(result)
 
-## -----------------------------------------------------------------------------
+## ----eg2_semi_synthetic_generate----------------------------------------------
+data("cfRNA_placenta")
+X = cfRNA_placenta$counts
 
+#generate the response variable y from a linear model
+set.seed(1)
+n = nrow(X)
+p = ncol(X)
+k = 10
+a = 5
+nonzero = sample(1:p, k)
+beta = a * (1:p %in% nonzero) / sqrt(n)
+y = X %*% beta + rnorm(n)
+
+
+## ----eg2_plsko_pipeline-------------------------------------------------------
+# run the knockoff filter with default settings
+#result = plsko_filter(X, y)
 

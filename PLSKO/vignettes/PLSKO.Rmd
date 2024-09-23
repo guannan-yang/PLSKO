@@ -39,7 +39,7 @@ Here is the outline of the functions corresponding to the workflow of knockoff f
 You can install the development version of the package from GitHub using the following code:
 ```{r installation}
 # install.packages("devtools")
-devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE)
+devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE, upgrade = "never")
 
 library(PLSKO)
 
@@ -54,9 +54,9 @@ library(PLSKO)
 ## Example 1: Simulated data
 In this example, we generate a simulated dataset and response variable and then show how to apply the PLSKO method to select important variables.
 ```{r eg1_generate}
-set.seed(1234)
+set.seed(1)
 n = 100 # number of samples
-p = 200 # number of variables ( p > n, high-dimensional setting )
+p = 150 # number of variables ( p > n, high-dimensional setting )
 k = 25 # number of important variables with nonzeros coefficients
 a = 5 # coefficient for important variables
 
@@ -98,17 +98,18 @@ which(beta != 0)
 
 # calculate FDP in this run
 fdp <- function(result) {
-  sum(beta[result$selected] ==0) / max(length(result$selected), 1)
+  if(class(result) == "knockoff.result") fdr = sum(beta[result$selected] ==0) / max(length(result$selected), 1)
+  else if (class(result) == "AKO.result") fdr = sum(beta[result$ako.s] ==0) / max(length(result$ako.s), 1)
+  return(fdr)
 }
 fdp(result)
 
 ```
 The default settings, which are: neighbourhoods are determined based on 80-quantile of the sample correlations, the number of components is determined empirically by the \eqn{PC_p1} criterion (minimum 2), and the sparsity level is set to 1 (no sparsity) for PLS regression and the target FDR level is 0.05.
-The result shows that the PLSKO method selected the 9 important variables with a false discovery proportion (FDP) of 0.1, which is a little higher than the target FDR level of 0.05. This might due to the small sample size and the high-dimensional setting, modified FDR control by `offset = 0` is used in this run, lack of specified neighbourhood information, or purely randomness in knockoff variable generating (given knockoff frame work only ensure FDR control as an expectation of FDP, which might fluctuate in different runs). 
+The result shows that the PLSKO method selected the 8 important variables with a false discovery proportion (FDP) of 0.
 
 
-
-#### Customized settings 1: Customised neighbourhood information
+#### Customized settings example 1: Customised neighbourhood information
 You can also customize the settings of the PLSKO method by specifying the parameters in the \code{plsko_filter} function. For example, you can specify the neighbourhood information, the number of components, the sparsity level in PLS regression, and the target FDR level, etc. 
 
 First, we define the neighbourhood information based on the AR(1) structure of the variables (which we know is true in this case, in real data, you might need to estimate the neighbourhood information from the data or make some assumptions based on domain knowledge). Specifically, we define the neighbourhood of each variable as the variables that are within a distance of 3 variables from the variable. 
@@ -140,19 +141,20 @@ result = plsko_filter(X, y, nb.list = nb.mat)
 print(result)
 fdp(result)
 ```
-These two options are equivalent, and you can choose the one that is more convenient for you. The result shows that the PLSKO method selected 3 important variables with a FDP of 0, however the power is low in this run.
+These two options are equivalent, and you can choose the one that is more convenient for you. The result shows that the PLSKO method selected 12 important variables with a FDP of 0.833, which is a little bit higher than the target FDR level of 0.05. This might due to the small sample size and the high-dimensional setting, modified FDR control by `offset = 0` is used in this run, or purely randomness in knockoff variable generating (given knockoff frame work only ensure FDR control as an expectation of FDP, which might fluctuate in different runs). However, the power of the PLSKO method is better than the default run with input of neighbourhood information.
 
-#### Customized settings 2: Customised number of components and sparsity level
+
+#### Customized settings example 2: Customised number of components and sparsity level
 You can also specify the number of components and the sparsity level in the PLS regression. For example, you can set the number of components to 3 and the sparsity level to 0.9. 
 ```{r costumised_ncomp}
 # run the PLSKO method with the number of components set to 3 and the sparsity level set to 0.9, which means 90% of the coefficients in PLS regression are zero on each component.
-result = plsko_filter(X, y, ncomp = 3, sparsity = 0.9)
+result = plsko_filter(X, y, ncomp = 3, sparsity = 0.95)
 print(result)
 fdp(result)
 ```
-We observed that the PLSKO method selected 7 important variables (out of 25) with a FDP of 0, with increased power compared to the previous run.
+We observed that the PLSKO method selected 5 important variables (out of 25) with a FDP of 0.
 
-#### Customized settings 3: Binary response
+#### Customized settings example 3: Binary response
 You can also apply the PLSKO method to a binary response variable. In this case, you need to specify the method to compute the test statistics. For example, you can set the method to "lasso.logistic" to use the difference of coefficients in LASSO logistic regression. Or without specifying, `plsko_pipeline` will automatically adjust the method based on the response type. 
 ```{r binary_response}
 # run the knockoff filter with default settings for binary response
@@ -171,21 +173,41 @@ result = plsAKO(X, y)
 print(result)
 fdp(result)
 
-# Binary response
-result = plsAKO(X, y_bin)
-print(result)
-fdp(result)
+#Binary response
+# result = plsAKO(X, y_bin)
+# print(result)
+# fdp(result)
 ```
-The result shows that the PLS-AKO method selected 7 important variables with a FDP of 0, 
+The result shows that the PLS-AKO method selected 5 important variables with a FDP of 0, 
 
 
 
-We first generate the knockoff variables using the \code{plsko} function, then calculate the importance scores using the \code{plsAKO} function, and finally perform the knockoff filtering using the \code{KO_with_W} function.
- 
 ## Example 2: Semi-synthetic data with continuous response
 In this example, we generate a semi-synthetic dataset with continuous response and apply the PLSKO method to select important variables in biological data.
 
-```{r}
+There are two datasets provided in the package: `prot_placenta` and `cfRNA_placenta`. The `prot_placenta` dataset contains relative abundances of proteins from 36 samples with 36 genes. The `rna_placenta` dataset contains cell-free RNA counts (Moufarrej et al. ,2022) from 71 samples with 81 genes with elevated expression in placenta. The proteins are a subset of proteomics data (from a multi-omics pre-eclampsia study (Marić et al. 2022)) that were inferred released by placenta, according to Degnes et al. (2022).
+
+### Semi-synthetic data based on the `rna`_placenta` dataset
+```{r eg2_semi_synthetic_generate}
+data("cfRNA_placenta")
+X = cfRNA_placenta$counts
+
+#generate the response variable y from a linear model
+set.seed(1)
+n = nrow(X)
+p = ncol(X)
+k = 10
+a = 5
+nonzero = sample(1:p, k)
+beta = a * (1:p %in% nonzero) / sqrt(n)
+y = X %*% beta + rnorm(n)
 
 ```
 
+```{r eg2_plsko_pipeline}
+# run the knockoff filter with default settings
+#result = plsko_filter(X, y)
+```
+
+
+We first generate the knockoff variables using the \code{plsko} function, then calculate the importance scores using the \code{plsAKO} function, and finally perform the knockoff filtering using the \code{KO_with_W} function.
