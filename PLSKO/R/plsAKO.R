@@ -216,8 +216,8 @@ plsAKO <- function(X, y, n_ko = 25,
 #' Performs Aggregated Knockoff analysis with multiple knockoff sets to improve the stability of results. The function is adapted from Tian et al. (2022).
 #'
 #' @param X A \eqn{n \times p} numeric matrix or data frame of predictors.
-#' @param y A numeric or factor response vector of length \eqn{n}.
 #' @param Xko.list A list of knockoff variable matrices (\eqn{n \times p}) corresponding to the original matrix \code{X}.
+#' @param y A numeric or factor response vector of length \eqn{n}.
 #' @param q A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.
 #' @param w.method A string specifying the method to compute test statistics. Options are \code{"lasso.lcd"}, \code{"lasso.logistic"}, \code{"lasso.max.lambda"}, \code{"RF"}. Default is \code{"lasso.lcd"}.
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
@@ -260,7 +260,7 @@ plsAKO <- function(X, y, n_ko = 25,
 #' @export
 #'
 # AKO with generated knockoff sets as a list
-AKO_withKO <- function(X, y, Xko.list,
+AKO_withKO <- function(X, Xko.list, y,
                        q = 0.05,  w.method = "lasso.lcd", offset = 0,
                        gamma = 0.3, seed = 1, parallel = T, ncores = NULL){
 
@@ -363,10 +363,11 @@ AKO_withKO <- function(X, y, Xko.list,
 #'
 #' Performs Aggregated Knockoff analysis using precomputed test statistics `W`.
 #'
-#' @param W A list of test statistics from multiple knockoff filters. The length of the list should be the number of knockoff copies. Each element in the list should be a numeric vector of length \eqn{p} representing the test statistics.
+#' @param W.list A list of test statistics from multiple knockoff filters. The length of the list should be the number of knockoff copies. Each element in the list should be a numeric vector of length \eqn{p} representing the test statistics.
 #' @param q A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
 #' @param gamma A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is \eqn{0.3}.
+#' @param X.names A character vector of variable names. Default is \code{NULL}.
 #'
 #' @return A list containing:
 #' \describe{
@@ -404,17 +405,25 @@ AKO_withKO <- function(X, y, Xko.list,
 #'
 #'
 #' @export
-AKO_withW <- function(W, q = 0.05, offset = 0, gamma = 0.3){
+AKO_withW <- function(W.list, q = 0.05, offset = 0, gamma = 0.3, X.names = NULL){
 
-  p = length(W[[1]])
-  n_ko = length(W)
+  if(!is.numeric(W.list[[1]])) stop('Input W.list must be a numeric vector')
+  if(!is.null(X.names) && length(X.names) != length(W.list[[1]])){
+    stop('Length of X.names must be the same as the length of W')
+  }
+
+  if(!is.null(names(W.list[[1]]))& is.null(X.names)) X.names = names(W.list[[1]])
+
+  p = length(W.list[[1]])
+  n_ko = length(W.list)
 
   pvals = matrix(0, p, n_ko)
   selected <- list()
   #Multiple Knockoffs
+
   for (i in 1:n_ko) {
-    pvals[,i] = empirical_pval(W[[i]], offset = offset)
-    S <- ko_withW(W[[i]], q = q)
+    pvals[,i] = empirical_pval(W.list[[i]], offset = offset)
+    S <- ko_withW(W.list[[i]], q = q, X.names = X.names)
     selected[[i]] <- S
   }
 
@@ -424,8 +433,8 @@ AKO_withW <- function(W, q = 0.05, offset = 0, gamma = 0.3){
 
   ako.s <- which(aggregated_pval <= threshold)
 
-  if(!is.null(names(ako.s))){
-    names(ako.s) = names(W[[1]])[ako.s]
+  if(!is.null(X.names)){
+    names(ako.s) = X.names[ako.s]
   }
 
   result <- structure(list(call = match.call(),

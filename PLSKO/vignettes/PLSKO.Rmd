@@ -167,6 +167,7 @@ We observed `NULL` in the result, which means no variable is selected in this ru
 ### PLS-AKO pipeline: aggregate multiple knockoff results from `PLSKO` method
 Given the randomness in the knockoff variable generation and the PLS regression, the results of the PLSKO method might vary in different runs. To improve the stability and power of the variable selection, you can aggregate multiple knockoff results using the PLS-AKO method.
 We only show the default settings here, you can also customize the settings in the \code{plsAKO} function, such as the number of iterations (`n_ko`) and other parameters similar to the \code{plsko_filter} function. The default setting is to run 25 iterations of the PLSKO method and aggregate the results using the PLS-AKO method. We provide options of parallel computing (default) in the \code{plsAKO} function, which can significantly reduce the computation time when running multiple iterations. 
+Note that our default setting is to compute parallelly to speed up the computation. If you encounter any issues with parallel computing, you can set `parallel = FALSE` to run in serial mode.
 ```{r eg1_plsako_pipeline}
 # run the PLS-AKO method with default settings
 result = plsAKO(X, y)
@@ -183,9 +184,9 @@ The result shows that the PLS-AKO method selected 5 important variables with a F
 
 
 ## Example 2: Semi-synthetic data with continuous response
-In this example, we generate a semi-synthetic dataset with continuous response and apply the PLSKO method to select important variables in biological data.
+In this example, we generate a semi-synthetic dataset with continuous response and apply the PLSKO method to select important variables in biological data. We generate the response variable y from a linear model with 8 important variables with nonzeros coefficients. By this way we can evaluate the performance of the PLSKO method in selecting important variables in real biological data with some known ground truth.
 
-There are two datasets provided in the package: `prot_placenta` and `cfRNA_placenta`. The `prot_placenta` dataset contains relative abundances of proteins from 36 samples with 36 genes. The `rna_placenta` dataset contains cell-free RNA counts (Moufarrej et al. ,2022) from 71 samples with 81 genes with elevated expression in placenta. The proteins are a subset of proteomics data (from a multi-omics pre-eclampsia study (Marić et al. 2022)) that were inferred released by placenta, according to Degnes et al. (2022).
+There are two datasets provided in the package: `prot_placenta` and `cfRNA_placenta`. The `prot_placenta` dataset contains relative abundances of proteins from 36 samples with 36 genes. The `cfRNA_placenta` dataset contains cell-free RNA counts (Moufarrej et al. ,2022) from 71 samples with 81 genes with elevated expression in placenta. The proteins are a subset of proteomics data (from a multi-omics pre-eclampsia study (Marić et al. 2022)) that were inferred released by placenta, according to Degnes et al. (2022).
 
 ### Semi-synthetic data based on the `prot_placenta` dataset
 ```{r eg2_semi_synthetic_generate}
@@ -224,10 +225,13 @@ Let's see how aggregating multiple knockoff results using the PLS-AKO method.
 result = plsAKO(X, y, threshold.abs = 0, ncomp = 5, sparsity = 0.8)
 print(result)
 fdp(result)
-```
-Similar to the PLSKO method, the PLS-AKO method selected all 8 important variables with a FDP of 0, although 7 of these 25 iteration include at one false discovery. This shows how the PLS-AKO method can improve the stability of the result.
 
-## Example 3: Advanced usage of `PLSKO` package
+# average the results from 25 iterations
+mean(unlist(lapply(result$s, function(x) fdp(x))))
+```
+Similar to the PLSKO method, the PLS-AKO method selected all 8 important variables with a FDP of 0. Although 7 of these 25 iteration include at one false discovery with FDR higher than 0.05, the estimated FDR from the mean of the FDP is 0.042, which is consistent with the target FDR level of 0.05. Overall, this shows how the PLS-AKO method can improve the stability of the result.
+
+## Example 3: Advanced usage of `PLSKO` package -- `PLSKO` pipeline adavanced: apply knockoff framework with PLSKO-generated knockoff in a single run
 Now as you know the basic usage of the `PLSKO` package, we will show you how to use the package in a more advanced way.
 Our package also provides separate function for each step of the knockoff framework, which allows users to have more flexibility in the workflow. In this example, we show how to use the `PLSKO` package to apply the PLSKO method to the `cfRNA_placenta` dataset with a synthetic response variable.
 
@@ -246,9 +250,129 @@ y = X %*% beta
 ```
 
 ### Step 1: Knockoff Variable Generation
-First, we generate the knockoff variables using the \code{plsko} function. The function requires the predictor matrix \code{X} as input and returns a matrix of knockoff variables.
+First, we generate the knockoff variables using the `plsko` function. The function requires the predictor matrix \code{X} as input and returns a matrix of knockoff variables. There are many options to customise the knockoff variables, such as the threshold to define neighbourhoods, the number of components in PLS regression, and the sparsity level in PLS regression. 
 
 ```{r eg3_advanced_usage_knockoff}
-# generate the knockoff variables
+# generate the knockoff variables with default settings of the plsko function
 plsko_default = plsko(X) 
+
+# generate the knockoff variables with customized settings
+plsko_custom = plsko(X, threshold.abs = 0, ncomp = 7, sparsity = 0.8)
+
+# generate the knockoff variables with customized settings and neighbourhood information
+# Here we may estimate the neibourhood information from the data by using graphical lasso, which provides a sparse estimate of the precision matrix
+library(glasso)
+cov.mat = cov(X)
+glasso_res = glasso(cov.mat, rho = 0.1) # estimate the precision matrix using graphical lasso
+nb.list = lapply(1:p, function(i) which(glasso_res$wi[i, ] != 0)) # get the neighbourhood information from the precision matrix
+plsko_custom_nb = plsko(X, ncomp = 7, nb.list = nb.list)
+
+
+# Or you can use other knockoff methods to generate the knockoff variables
+# For example, you can use the method provided in the `knockoff` package to generate the knockoff variables
+library(knockoff)
+ko_soa = knockoff::create.second_order(X)
 ```
+
+### Step 2 and 3 pipeline: Importance Score Calculation and Knockoff Filtering and Variable Selection by function `ko_filter`
+Then for the next two steps, we can use the function `ko_filter` in our package to calculate the importance scores and perform the knockoff filtering and variable selection. The function requires the predictor matrix \code{X}, the knockoff variables, and the response vector \code{y} as input arguments. The function returns an object of class \code{knockoff.result} with the selected variables, which is the same with the output of `plsko_filter` function. 
+
+```{r eg3_advanced_usage_ko_filter}
+# calculate the importance scores and perform the knockoff filtering and variable selection with the default settings
+result_default = ko_filter(X, plsko_default, y)
+print(result_default)
+fdp(result_default)
+
+# calculate the importance scores and perform the knockoff filtering and variable selection with the customized settings
+result_custom = ko_filter(X, plsko_custom, y)
+print(result_custom)
+fdp(result_custom)
+
+# calculate the importance scores and perform the knockoff filtering and variable selection with the customized settings and neighbourhood information
+result_custom_nb = ko_filter(X, plsko_custom_nb, y)
+print(result_custom_nb)
+fdp(result_custom_nb)
+
+# calculate the importance scores and perform the knockoff filtering and variable selection with the knockoff variables generated by the `knockoff` package
+result_ko_soa = ko_filter(X, ko_soa, y)
+print(result_ko_soa)
+fdp(result_ko_soa)
+
+# Or you might have different options to calculate the importance scores
+result_default_rf <- ko_filter(X, plsko_default, y, method = "RF") # e.g. use random forest to calculate the importance scores
+print(result_default_rf)
+fdp(result_default_rf)
+
+```
+
+
+### Step 3: Select important variables by function `ko_withW`
+The importance score is calculated based on the assumption of relationship between X and y. As long as the importance score is valid and satisfies the \textit{flip-coin} property (defined in the original knockoff paper), it will not affect the FDR control but might affect the power of the method.
+If you have your own importance score, you can use the function `ko_withW` to perform the knockoff filtering and variable selection. The function requires the importance scores and the target FDR level as input arguments. 
+
+```{r eg3_advanced_usage_ko_withW}
+# calculate the importance scores using self-defined method, e.g. difference of absolute value marginal correlation between X and y between the original and knockoff variables 
+
+my_knockoff_stat = function(X, X_k, y) {
+  abs(t(X) %*% y) - abs(t(X_k) %*% y)
+}
+W = my_knockoff_stat(X, plsko_custom, y)
+result_my = ko_withW(W, q = 0.05)
+print(result_my)
+```
+
+Unfortunately, no variable is selected in this run, suggesting low power of the marginal correlation as the importance score in this case.
+
+## Example 4: Adavanced usage of `PLS-AKO` pipeline: Real data with binary response with customized functions for multiple knockoff aggregation
+In this example, we show how to apply the PLS-AKO method to the `cfRNA_placenta` dataset with the real binary response variable. We will use the separate functions in the PLS-AKO pipeline to aggregate multiple knockoff results and improve the stability and power of the variable selection.
+
+#### Step 1: Multiple knockoff generation
+```{r eg4_plsako_steps_1}
+X = as.matrix(cfRNA_placenta$counts)
+y = cfRNA_placenta$metadata$PE # the real binary response variable indicates pre-eclampsia or control
+
+# generate multiple knockoff variables by PLSKO with customised setting 
+n_ko = 15
+plsko_list = lapply(1:n_ko, function(i) plsko(X, seed = i)) # generate 15 knockoff independently. Note that seed needs to be set since the default seed is 1 in the function, without specifying, the same knockoff variables will be generated in each iteration.
+
+```
+
+#### Step 2 and 3 combined: Importance Score Calculation, Knockoff Filtering and Variable Selection
+
+```{r eg4_plsako_steps_2}
+# calculate the importance scores and perform the knockoff filtering and variable selection with the PLS-AKO method
+result_ako = AKO_withKO(X, plsko_list, y)
+print(result_ako)
+```
+The result shows that the PLS-AKO method selected 6 important genes related to pre-eclampsia.
+
+This function also allows you to bring your own knockoff variables, which is useful when you have your own method to generate the knockoff variables.
+```{r eg4_plsako_steps_selfKO}
+soa_list = lapply(1:n_ko, function(i) knockoff::create.second_order(X))
+result_ako_soa = AKO_withKO(X, soa_list, y)
+print(result_ako_soa)
+```
+
+#### Step 3: Multiple knockoff aggregation with customised importance scores
+Same with the `ko_withW` function, you can also use the `AKO_withW` function to perform the knockoff filtering and variable selection with customised importance scores. 
+```{r eg4_plsako_steps_3}
+# calculate the importance scores from multiple knockoff variables using self-defined method
+# We use the difference of absolute value of Z-score (on contrast of PE or control group) between the original and knockoff variables as the importance score
+my_knockoff_stat_Z <- function(X, Xk, y){
+  X_new <- cbind(X, Xk)
+ beta <- coef(lm(X_new~y))[2,] # run orgianal variables and knockoff variables together into an OLS regression and extract Z-score
+ abs(beta[1:ncol(X)]) - abs(beta[(ncol(X)+1):ncol(X_new)])
+}
+
+# calculate the importance scores from multiple knockoff variables
+W_list = lapply(1:n_ko, function(i) my_knockoff_stat_Z(X, plsko_list[[i]], y))
+
+# perform the knockoff filtering and variable selection with AKO method
+result_ako_W = AKO_withW(W_list, q = 0.05)
+print(result_ako_W)
+```
+
+## Conclusion
+This vignette provides a comprehensive guide on how to use the `PLSKO` package to select important variables in high-dimensional biological data. The package provides functions to generate the knockoff variables, calculate the importance scores, and perform the knockoff filtering and variable selection. The package is designed to be user-friendly and flexible, allowing users to easily apply the PLSKO method to their own data. More details about the functions and parameters can be found in the package documentation.
+
+We hope this vignette helps you to get started with the `PLSKO` package and apply the PLSKO method to your own data. If you have any questions or feedback, please feel free to contact us or open an issue on the GitHub repository.

@@ -637,7 +637,10 @@ and other parameters similar to the function. The default setting is to
 run 25 iterations of the PLSKO method and aggregate the results using
 the PLS-AKO method. We provide options of parallel computing (default)
 in the function, which can significantly reduce the computation time
-when running multiple iterations.</p>
+when running multiple iterations. Note that our default setting is to
+compute parallelly to speed up the computation. If you encounter any
+issues with parallel computing, you can set
+<code>parallel = FALSE</code> to run in serial mode.</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co"># run the PLS-AKO method with default settings</span></span>
 <span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsAKO</span>(X, y)</span>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="fu">print</span>(result)</span>
@@ -667,11 +670,14 @@ variables with a FDP of 0,</p>
 <h2>Example 2: Semi-synthetic data with continuous response</h2>
 <p>In this example, we generate a semi-synthetic dataset with continuous
 response and apply the PLSKO method to select important variables in
-biological data.</p>
+biological data. We generate the response variable y from a linear model
+with 8 important variables with nonzeros coefficients. By this way we
+can evaluate the performance of the PLSKO method in selecting important
+variables in real biological data with some known ground truth.</p>
 <p>There are two datasets provided in the package:
 <code>prot_placenta</code> and <code>cfRNA_placenta</code>. The
 <code>prot_placenta</code> dataset contains relative abundances of
-proteins from 36 samples with 36 genes. The <code>rna_placenta</code>
+proteins from 36 samples with 36 genes. The <code>cfRNA_placenta</code>
 dataset contains cell-free RNA counts (Moufarrej et al. ,2022) from 71
 samples with 81 genes with elevated expression in placenta. The proteins
 are a subset of proteomics data (from a multi-omics pre-eclampsia study
@@ -739,15 +745,23 @@ method.</p>
 <span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a><span class="co">#&gt;  1  4 11 14 15 18 23 27 29 34 </span></span>
 <span id="cb12-12"><a href="#cb12-12" tabindex="-1"></a><span class="co">#&gt; 25 25 25 25  4 25 25 25  4 25</span></span>
 <span id="cb12-13"><a href="#cb12-13" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
-<span id="cb12-14"><a href="#cb12-14" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<span id="cb12-14"><a href="#cb12-14" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
+<span id="cb12-15"><a href="#cb12-15" tabindex="-1"></a></span>
+<span id="cb12-16"><a href="#cb12-16" tabindex="-1"></a><span class="co"># average the results from 25 iterations</span></span>
+<span id="cb12-17"><a href="#cb12-17" tabindex="-1"></a><span class="fu">mean</span>(<span class="fu">unlist</span>(<span class="fu">lapply</span>(result<span class="sc">$</span>s, <span class="cf">function</span>(x) <span class="fu">fdp</span>(x))))</span>
+<span id="cb12-18"><a href="#cb12-18" tabindex="-1"></a><span class="co">#&gt; [1] 0.03466667</span></span></code></pre></div>
 <p>Similar to the PLSKO method, the PLS-AKO method selected all 8
-important variables with a FDP of 0, although 7 of these 25 iteration
-include at one false discovery. This shows how the PLS-AKO method can
+important variables with a FDP of 0. Although 7 of these 25 iteration
+include at one false discovery with FDR higher than 0.05, the estimated
+FDR from the mean of the FDP is 0.042, which is consistent with the
+target FDR level of 0.05. Overall, this shows how the PLS-AKO method can
 improve the stability of the result.</p>
 </div>
 </div>
-<div id="example-3-advanced-usage-of-plsko-package" class="section level2">
-<h2>Example 3: Advanced usage of <code>PLSKO</code> package</h2>
+<div id="example-3-advanced-usage-of-plsko-package-plsko-pipeline-adavanced-apply-knockoff-framework-with-plsko-generated-knockoff-in-a-single-run" class="section level2">
+<h2>Example 3: Advanced usage of <code>PLSKO</code> package –
+<code>PLSKO</code> pipeline adavanced: apply knockoff framework with
+PLSKO-generated knockoff in a single run</h2>
 <p>Now as you know the basic usage of the <code>PLSKO</code> package, we
 will show you how to use the package in a more advanced way. Our package
 also provides separate function for each step of the knockoff framework,
@@ -768,12 +782,243 @@ response variable.</p>
 <span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a>y <span class="ot">=</span> X <span class="sc">%*%</span> beta </span></code></pre></div>
 <div id="step-1-knockoff-variable-generation" class="section level3">
 <h3>Step 1: Knockoff Variable Generation</h3>
-<p>First, we generate the knockoff variables using the function. The
-function requires the predictor matrix as input and returns a matrix of
-knockoff variables.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># generate the knockoff variables</span></span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>plsko_default <span class="ot">=</span> <span class="fu">plsko</span>(X) </span></code></pre></div>
+<p>First, we generate the knockoff variables using the
+<code>plsko</code> function. The function requires the predictor matrix
+as input and returns a matrix of knockoff variables. There are many
+options to customise the knockoff variables, such as the threshold to
+define neighbourhoods, the number of components in PLS regression, and
+the sparsity level in PLS regression.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># generate the knockoff variables with default settings of the plsko function</span></span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>plsko_default <span class="ot">=</span> <span class="fu">plsko</span>(X) </span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a><span class="co"># generate the knockoff variables with customized settings</span></span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>plsko_custom <span class="ot">=</span> <span class="fu">plsko</span>(X, <span class="at">threshold.abs =</span> <span class="dv">0</span>, <span class="at">ncomp =</span> <span class="dv">7</span>, <span class="at">sparsity =</span> <span class="fl">0.8</span>)</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a></span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a><span class="co"># generate the knockoff variables with customized settings and neighbourhood information</span></span>
+<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a><span class="co"># Here we may estimate the neibourhood information from the data by using graphical lasso, which provides a sparse estimate of the precision matrix</span></span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a><span class="fu">library</span>(glasso)</span>
+<span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>cov.mat <span class="ot">=</span> <span class="fu">cov</span>(X)</span>
+<span id="cb14-11"><a href="#cb14-11" tabindex="-1"></a>glasso_res <span class="ot">=</span> <span class="fu">glasso</span>(cov.mat, <span class="at">rho =</span> <span class="fl">0.1</span>) <span class="co"># estimate the precision matrix using graphical lasso</span></span>
+<span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a>nb.list <span class="ot">=</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span>p, <span class="cf">function</span>(i) <span class="fu">which</span>(glasso_res<span class="sc">$</span>wi[i, ] <span class="sc">!=</span> <span class="dv">0</span>)) <span class="co"># get the neighbourhood information from the precision matrix</span></span>
+<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a>plsko_custom_nb <span class="ot">=</span> <span class="fu">plsko</span>(X, <span class="at">ncomp =</span> <span class="dv">7</span>, <span class="at">nb.list =</span> nb.list)</span>
+<span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a></span>
+<span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a></span>
+<span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="co"># Or you can use other knockoff methods to generate the knockoff variables</span></span>
+<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co"># For example, you can use the method provided in the `knockoff` package to generate the knockoff variables</span></span>
+<span id="cb14-18"><a href="#cb14-18" tabindex="-1"></a><span class="fu">library</span>(knockoff)</span>
+<span id="cb14-19"><a href="#cb14-19" tabindex="-1"></a><span class="co">#&gt; Warning: package &#39;knockoff&#39; was built under R version 4.3.1</span></span>
+<span id="cb14-20"><a href="#cb14-20" tabindex="-1"></a>ko_soa <span class="ot">=</span> knockoff<span class="sc">::</span><span class="fu">create.second_order</span>(X)</span></code></pre></div>
 </div>
+<div id="step-2-and-3-pipeline-importance-score-calculation-and-knockoff-filtering-and-variable-selection-by-function-ko_filter" class="section level3">
+<h3>Step 2 and 3 pipeline: Importance Score Calculation and Knockoff
+Filtering and Variable Selection by function <code>ko_filter</code></h3>
+<p>Then for the next two steps, we can use the function
+<code>ko_filter</code> in our package to calculate the importance scores
+and perform the knockoff filtering and variable selection. The function
+requires the predictor matrix , the knockoff variables, and the response
+vector as input arguments. The function returns an object of class with
+the selected variables, which is the same with the output of
+<code>plsko_filter</code> function.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="co"># calculate the importance scores and perform the knockoff filtering and variable selection with the default settings</span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>result_default <span class="ot">=</span> <span class="fu">ko_filter</span>(X, plsko_default, y)</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="fu">print</span>(result_default)</span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt; ko_filter(X = X, Xk = plsko_default, y = y)</span></span>
+<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a><span class="co">#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 </span></span>
+<span id="cb15-9"><a href="#cb15-9" tabindex="-1"></a><span class="co">#&gt;               1              14              34              39              43 </span></span>
+<span id="cb15-10"><a href="#cb15-10" tabindex="-1"></a><span class="co">#&gt; ENSG00000155966 ENSG00000169860 ENSG00000182158 </span></span>
+<span id="cb15-11"><a href="#cb15-11" tabindex="-1"></a><span class="co">#&gt;              51              59              68</span></span>
+<span id="cb15-12"><a href="#cb15-12" tabindex="-1"></a><span class="fu">fdp</span>(result_default)</span>
+<span id="cb15-13"><a href="#cb15-13" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
+<span id="cb15-14"><a href="#cb15-14" tabindex="-1"></a></span>
+<span id="cb15-15"><a href="#cb15-15" tabindex="-1"></a><span class="co"># calculate the importance scores and perform the knockoff filtering and variable selection with the customized settings</span></span>
+<span id="cb15-16"><a href="#cb15-16" tabindex="-1"></a>result_custom <span class="ot">=</span> <span class="fu">ko_filter</span>(X, plsko_custom, y)</span>
+<span id="cb15-17"><a href="#cb15-17" tabindex="-1"></a><span class="fu">print</span>(result_custom)</span>
+<span id="cb15-18"><a href="#cb15-18" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb15-19"><a href="#cb15-19" tabindex="-1"></a><span class="co">#&gt; ko_filter(X = X, Xk = plsko_custom, y = y)</span></span>
+<span id="cb15-20"><a href="#cb15-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-21"><a href="#cb15-21" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb15-22"><a href="#cb15-22" tabindex="-1"></a><span class="co">#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 </span></span>
+<span id="cb15-23"><a href="#cb15-23" tabindex="-1"></a><span class="co">#&gt;               1              14              34              39              43 </span></span>
+<span id="cb15-24"><a href="#cb15-24" tabindex="-1"></a><span class="co">#&gt; ENSG00000155966 ENSG00000169860 ENSG00000182158 </span></span>
+<span id="cb15-25"><a href="#cb15-25" tabindex="-1"></a><span class="co">#&gt;              51              59              68</span></span>
+<span id="cb15-26"><a href="#cb15-26" tabindex="-1"></a><span class="fu">fdp</span>(result_custom)</span>
+<span id="cb15-27"><a href="#cb15-27" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
+<span id="cb15-28"><a href="#cb15-28" tabindex="-1"></a></span>
+<span id="cb15-29"><a href="#cb15-29" tabindex="-1"></a><span class="co"># calculate the importance scores and perform the knockoff filtering and variable selection with the customized settings and neighbourhood information</span></span>
+<span id="cb15-30"><a href="#cb15-30" tabindex="-1"></a>result_custom_nb <span class="ot">=</span> <span class="fu">ko_filter</span>(X, plsko_custom_nb, y)</span>
+<span id="cb15-31"><a href="#cb15-31" tabindex="-1"></a><span class="fu">print</span>(result_custom_nb)</span>
+<span id="cb15-32"><a href="#cb15-32" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb15-33"><a href="#cb15-33" tabindex="-1"></a><span class="co">#&gt; ko_filter(X = X, Xk = plsko_custom_nb, y = y)</span></span>
+<span id="cb15-34"><a href="#cb15-34" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-35"><a href="#cb15-35" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb15-36"><a href="#cb15-36" tabindex="-1"></a><span class="co">#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 </span></span>
+<span id="cb15-37"><a href="#cb15-37" tabindex="-1"></a><span class="co">#&gt;               1              14              34              39              43 </span></span>
+<span id="cb15-38"><a href="#cb15-38" tabindex="-1"></a><span class="co">#&gt; ENSG00000155966 ENSG00000169860 ENSG00000173626 ENSG00000182158 </span></span>
+<span id="cb15-39"><a href="#cb15-39" tabindex="-1"></a><span class="co">#&gt;              51              59              66              68</span></span>
+<span id="cb15-40"><a href="#cb15-40" tabindex="-1"></a><span class="fu">fdp</span>(result_custom_nb)</span>
+<span id="cb15-41"><a href="#cb15-41" tabindex="-1"></a><span class="co">#&gt; [1] 0.1111111</span></span>
+<span id="cb15-42"><a href="#cb15-42" tabindex="-1"></a></span>
+<span id="cb15-43"><a href="#cb15-43" tabindex="-1"></a><span class="co"># calculate the importance scores and perform the knockoff filtering and variable selection with the knockoff variables generated by the `knockoff` package</span></span>
+<span id="cb15-44"><a href="#cb15-44" tabindex="-1"></a>result_ko_soa <span class="ot">=</span> <span class="fu">ko_filter</span>(X, ko_soa, y)</span>
+<span id="cb15-45"><a href="#cb15-45" tabindex="-1"></a><span class="fu">print</span>(result_ko_soa)</span>
+<span id="cb15-46"><a href="#cb15-46" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb15-47"><a href="#cb15-47" tabindex="-1"></a><span class="co">#&gt; ko_filter(X = X, Xk = ko_soa, y = y)</span></span>
+<span id="cb15-48"><a href="#cb15-48" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-49"><a href="#cb15-49" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb15-50"><a href="#cb15-50" tabindex="-1"></a><span class="co">#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 </span></span>
+<span id="cb15-51"><a href="#cb15-51" tabindex="-1"></a><span class="co">#&gt;               1              14              34              39              43 </span></span>
+<span id="cb15-52"><a href="#cb15-52" tabindex="-1"></a><span class="co">#&gt; ENSG00000155966 ENSG00000169860 ENSG00000173626 ENSG00000182158 </span></span>
+<span id="cb15-53"><a href="#cb15-53" tabindex="-1"></a><span class="co">#&gt;              51              59              66              68</span></span>
+<span id="cb15-54"><a href="#cb15-54" tabindex="-1"></a><span class="fu">fdp</span>(result_ko_soa)</span>
+<span id="cb15-55"><a href="#cb15-55" tabindex="-1"></a><span class="co">#&gt; [1] 0.1111111</span></span>
+<span id="cb15-56"><a href="#cb15-56" tabindex="-1"></a></span>
+<span id="cb15-57"><a href="#cb15-57" tabindex="-1"></a><span class="co"># Or you might have different options to calculate the importance scores</span></span>
+<span id="cb15-58"><a href="#cb15-58" tabindex="-1"></a>result_default_rf <span class="ot">&lt;-</span> <span class="fu">ko_filter</span>(X, plsko_default, y, <span class="at">method =</span> <span class="st">&quot;RF&quot;</span>) <span class="co"># e.g. use random forest to calculate the importance scores</span></span>
+<span id="cb15-59"><a href="#cb15-59" tabindex="-1"></a><span class="fu">print</span>(result_default_rf)</span>
+<span id="cb15-60"><a href="#cb15-60" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb15-61"><a href="#cb15-61" tabindex="-1"></a><span class="co">#&gt; ko_filter(X = X, Xk = plsko_default, y = y, method = &quot;RF&quot;)</span></span>
+<span id="cb15-62"><a href="#cb15-62" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-63"><a href="#cb15-63" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb15-64"><a href="#cb15-64" tabindex="-1"></a><span class="co">#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 </span></span>
+<span id="cb15-65"><a href="#cb15-65" tabindex="-1"></a><span class="co">#&gt;               1              14              34              39              43 </span></span>
+<span id="cb15-66"><a href="#cb15-66" tabindex="-1"></a><span class="co">#&gt; ENSG00000155966 ENSG00000169860 ENSG00000182158 </span></span>
+<span id="cb15-67"><a href="#cb15-67" tabindex="-1"></a><span class="co">#&gt;              51              59              68</span></span>
+<span id="cb15-68"><a href="#cb15-68" tabindex="-1"></a><span class="fu">fdp</span>(result_default_rf)</span>
+<span id="cb15-69"><a href="#cb15-69" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+</div>
+<div id="step-3-select-important-variables-by-function-ko_withw" class="section level3">
+<h3>Step 3: Select important variables by function
+<code>ko_withW</code></h3>
+<p>The importance score is calculated based on the assumption of
+relationship between X and y. As long as the importance score is valid
+and satisfies the property (defined in the original knockoff paper), it
+will not affect the FDR control but might affect the power of the
+method. If you have your own importance score, you can use the function
+<code>ko_withW</code> to perform the knockoff filtering and variable
+selection. The function requires the importance scores and the target
+FDR level as input arguments.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="co"># calculate the importance scores using self-defined method, e.g. difference of absolute value marginal correlation between X and y between the original and knockoff variables </span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a></span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a>my_knockoff_stat <span class="ot">=</span> <span class="cf">function</span>(X, X_k, y) {</span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>  <span class="fu">abs</span>(<span class="fu">t</span>(X) <span class="sc">%*%</span> y) <span class="sc">-</span> <span class="fu">abs</span>(<span class="fu">t</span>(X_k) <span class="sc">%*%</span> y)</span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>}</span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>W <span class="ot">=</span> <span class="fu">my_knockoff_stat</span>(X, plsko_custom, y)</span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a>result_my <span class="ot">=</span> <span class="fu">ko_withW</span>(W, <span class="at">q =</span> <span class="fl">0.05</span>)</span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a><span class="fu">print</span>(result_my)</span>
+<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a><span class="co">#&gt; ko_withW(W = W, q = 0.05)</span></span>
+<span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb16-12"><a href="#cb16-12" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a><span class="co">#&gt; NULL</span></span></code></pre></div>
+<p>Unfortunately, no variable is selected in this run, suggesting low
+power of the marginal correlation as the importance score in this
+case.</p>
+</div>
+</div>
+<div id="example-4-adavanced-usage-of-pls-ako-pipeline-real-data-with-binary-response-with-customized-functions-for-multiple-knockoff-aggregation" class="section level2">
+<h2>Example 4: Adavanced usage of <code>PLS-AKO</code> pipeline: Real
+data with binary response with customized functions for multiple
+knockoff aggregation</h2>
+<p>In this example, we show how to apply the PLS-AKO method to the
+<code>cfRNA_placenta</code> dataset with the real binary response
+variable. We will use the separate functions in the PLS-AKO pipeline to
+aggregate multiple knockoff results and improve the stability and power
+of the variable selection.</p>
+<div id="step-1-multiple-knockoff-generation" class="section level4">
+<h4>Step 1: Multiple knockoff generation</h4>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a>X <span class="ot">=</span> <span class="fu">as.matrix</span>(cfRNA_placenta<span class="sc">$</span>counts)</span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>y <span class="ot">=</span> cfRNA_placenta<span class="sc">$</span>metadata<span class="sc">$</span>PE <span class="co"># the real binary response variable indicates pre-eclampsia or control</span></span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a></span>
+<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a><span class="co"># generate multiple knockoff variables by PLSKO with customised setting </span></span>
+<span id="cb17-5"><a href="#cb17-5" tabindex="-1"></a>n_ko <span class="ot">=</span> <span class="dv">15</span></span>
+<span id="cb17-6"><a href="#cb17-6" tabindex="-1"></a>plsko_list <span class="ot">=</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span>n_ko, <span class="cf">function</span>(i) <span class="fu">plsko</span>(X, <span class="at">seed =</span> i)) <span class="co"># generate 15 knockoff independently. Note that seed needs to be set since the default seed is 1 in the function, without specifying, the same knockoff variables will be generated in each iteration.</span></span></code></pre></div>
+</div>
+<div id="step-2-and-3-combined-importance-score-calculation-knockoff-filtering-and-variable-selection" class="section level4">
+<h4>Step 2 and 3 combined: Importance Score Calculation, Knockoff
+Filtering and Variable Selection</h4>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="co"># calculate the importance scores and perform the knockoff filtering and variable selection with the PLS-AKO method</span></span>
+<span id="cb18-2"><a href="#cb18-2" tabindex="-1"></a>result_ako <span class="ot">=</span> <span class="fu">AKO_withKO</span>(X, plsko_list, y)</span>
+<span id="cb18-3"><a href="#cb18-3" tabindex="-1"></a><span class="fu">print</span>(result_ako)</span>
+<span id="cb18-4"><a href="#cb18-4" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb18-5"><a href="#cb18-5" tabindex="-1"></a><span class="co">#&gt; AKO_withKO(X = X, Xko.list = plsko_list, y = y)</span></span>
+<span id="cb18-6"><a href="#cb18-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb18-7"><a href="#cb18-7" tabindex="-1"></a><span class="co">#&gt; Selected variables (AKO):</span></span>
+<span id="cb18-8"><a href="#cb18-8" tabindex="-1"></a><span class="co">#&gt; ENSG00000076770 ENSG00000112419 ENSG00000112773 ENSG00000131149 ENSG00000198517 </span></span>
+<span id="cb18-9"><a href="#cb18-9" tabindex="-1"></a><span class="co">#&gt;              11              24              25              33              75 </span></span>
+<span id="cb18-10"><a href="#cb18-10" tabindex="-1"></a><span class="co">#&gt; Frequency of selected variables from 15 iterations of single-run knockoffs:</span></span>
+<span id="cb18-11"><a href="#cb18-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb18-12"><a href="#cb18-12" tabindex="-1"></a><span class="co">#&gt;  7 11 17 24 25 33 42 63 64 75 78 </span></span>
+<span id="cb18-13"><a href="#cb18-13" tabindex="-1"></a><span class="co">#&gt;  1  9  3 13 13 12  5  3  2  6  1</span></span></code></pre></div>
+<p>The result shows that the PLS-AKO method selected 6 important genes
+related to pre-eclampsia.</p>
+<p>This function also allows you to bring your own knockoff variables,
+which is useful when you have your own method to generate the knockoff
+variables.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a>soa_list <span class="ot">=</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span>n_ko, <span class="cf">function</span>(i) knockoff<span class="sc">::</span><span class="fu">create.second_order</span>(X))</span>
+<span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a>result_ako_soa <span class="ot">=</span> <span class="fu">AKO_withKO</span>(X, soa_list, y)</span>
+<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a><span class="fu">print</span>(result_ako_soa)</span>
+<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb19-5"><a href="#cb19-5" tabindex="-1"></a><span class="co">#&gt; AKO_withKO(X = X, Xko.list = soa_list, y = y)</span></span>
+<span id="cb19-6"><a href="#cb19-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb19-7"><a href="#cb19-7" tabindex="-1"></a><span class="co">#&gt; Selected variables (AKO):</span></span>
+<span id="cb19-8"><a href="#cb19-8" tabindex="-1"></a><span class="co">#&gt; ENSG00000076770 ENSG00000112419 ENSG00000112773 ENSG00000131149 ENSG00000172331 </span></span>
+<span id="cb19-9"><a href="#cb19-9" tabindex="-1"></a><span class="co">#&gt;              11              24              25              33              63 </span></span>
+<span id="cb19-10"><a href="#cb19-10" tabindex="-1"></a><span class="co">#&gt; ENSG00000198517 </span></span>
+<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a><span class="co">#&gt;              75 </span></span>
+<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a><span class="co">#&gt; Frequency of selected variables from 15 iterations of single-run knockoffs:</span></span>
+<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a><span class="co">#&gt; 11 17 24 25 33 42 63 64 75 78 </span></span>
+<span id="cb19-15"><a href="#cb19-15" tabindex="-1"></a><span class="co">#&gt;  8  3 12 13 10  3  6  2  6  2</span></span></code></pre></div>
+</div>
+<div id="step-3-multiple-knockoff-aggregation-with-customised-importance-scores" class="section level4">
+<h4>Step 3: Multiple knockoff aggregation with customised importance
+scores</h4>
+<p>Same with the <code>ko_withW</code> function, you can also use the
+<code>AKO_withW</code> function to perform the knockoff filtering and
+variable selection with customised importance scores.</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="co"># calculate the importance scores from multiple knockoff variables using self-defined method</span></span>
+<span id="cb20-2"><a href="#cb20-2" tabindex="-1"></a><span class="co"># We use the difference of absolute value of Z-score (on contrast of PE or control group) between the original and knockoff variables as the importance score</span></span>
+<span id="cb20-3"><a href="#cb20-3" tabindex="-1"></a>my_knockoff_stat_Z <span class="ot">&lt;-</span> <span class="cf">function</span>(X, Xk, y){</span>
+<span id="cb20-4"><a href="#cb20-4" tabindex="-1"></a>  X_new <span class="ot">&lt;-</span> <span class="fu">cbind</span>(X, Xk)</span>
+<span id="cb20-5"><a href="#cb20-5" tabindex="-1"></a> beta <span class="ot">&lt;-</span> <span class="fu">coef</span>(<span class="fu">lm</span>(X_new<span class="sc">~</span>y))[<span class="dv">2</span>,] <span class="co"># run orgianal variables and knockoff variables together into an OLS regression and extract Z-score</span></span>
+<span id="cb20-6"><a href="#cb20-6" tabindex="-1"></a> <span class="fu">abs</span>(beta[<span class="dv">1</span><span class="sc">:</span><span class="fu">ncol</span>(X)]) <span class="sc">-</span> <span class="fu">abs</span>(beta[(<span class="fu">ncol</span>(X)<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span><span class="fu">ncol</span>(X_new)])</span>
+<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a>}</span>
+<span id="cb20-8"><a href="#cb20-8" tabindex="-1"></a></span>
+<span id="cb20-9"><a href="#cb20-9" tabindex="-1"></a><span class="co"># calculate the importance scores from multiple knockoff variables</span></span>
+<span id="cb20-10"><a href="#cb20-10" tabindex="-1"></a>W_list <span class="ot">=</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span>n_ko, <span class="cf">function</span>(i) <span class="fu">my_knockoff_stat_Z</span>(X, plsko_list[[i]], y))</span>
+<span id="cb20-11"><a href="#cb20-11" tabindex="-1"></a></span>
+<span id="cb20-12"><a href="#cb20-12" tabindex="-1"></a><span class="co"># perform the knockoff filtering and variable selection with AKO method</span></span>
+<span id="cb20-13"><a href="#cb20-13" tabindex="-1"></a>result_ako_W <span class="ot">=</span> <span class="fu">AKO_withW</span>(W_list, <span class="at">q =</span> <span class="fl">0.05</span>)</span>
+<span id="cb20-14"><a href="#cb20-14" tabindex="-1"></a><span class="fu">print</span>(result_ako_W)</span>
+<span id="cb20-15"><a href="#cb20-15" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb20-16"><a href="#cb20-16" tabindex="-1"></a><span class="co">#&gt; AKO_withW(W.list = W_list, q = 0.05)</span></span>
+<span id="cb20-17"><a href="#cb20-17" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb20-18"><a href="#cb20-18" tabindex="-1"></a><span class="co">#&gt; Selected variables (AKO):</span></span>
+<span id="cb20-19"><a href="#cb20-19" tabindex="-1"></a><span class="co">#&gt; ENSG00000112773 ENSG00000198517 </span></span>
+<span id="cb20-20"><a href="#cb20-20" tabindex="-1"></a><span class="co">#&gt;              25              75 </span></span>
+<span id="cb20-21"><a href="#cb20-21" tabindex="-1"></a><span class="co">#&gt; Frequency of selected variables from 15 iterations of single-run knockoffs:</span></span>
+<span id="cb20-22"><a href="#cb20-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb20-23"><a href="#cb20-23" tabindex="-1"></a><span class="co">#&gt;  3 10 17 25 29 54 55 75 78 80 </span></span>
+<span id="cb20-24"><a href="#cb20-24" tabindex="-1"></a><span class="co">#&gt;  1  2  4  6  1  1  4  5  1  2</span></span></code></pre></div>
+</div>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>This vignette provides a comprehensive guide on how to use the
+<code>PLSKO</code> package to select important variables in
+high-dimensional biological data. The package provides functions to
+generate the knockoff variables, calculate the importance scores, and
+perform the knockoff filtering and variable selection. The package is
+designed to be user-friendly and flexible, allowing users to easily
+apply the PLSKO method to their own data. More details about the
+functions and parameters can be found in the package documentation.</p>
+<p>We hope this vignette helps you to get started with the
+<code>PLSKO</code> package and apply the PLSKO method to your own data.
+If you have any questions or feedback, please feel free to contact us or
+open an issue on the GitHub repository.</p>
 </div>
 
 

@@ -6,8 +6,8 @@
 \usage{
 AKO_withKO(
   X,
-  y,
   Xko.list,
+  y,
   q = 0.05,
   w.method = "lasso.lcd",
   offset = 0,
@@ -20,9 +20,9 @@ AKO_withKO(
 \arguments{
 \item{X}{A \eqn{n \times p} numeric matrix or data frame of predictors.}
 
-\item{y}{A numeric or factor response vector of length \eqn{n}.}
-
 \item{Xko.list}{A list of knockoff variable matrices (\eqn{n \times p}) corresponding to the original matrix \code{X}.}
+
+\item{y}{A numeric or factor response vector of length \eqn{n}.}
 
 \item{q}{A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.}
 

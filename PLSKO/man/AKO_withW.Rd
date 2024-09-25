@@ -4,16 +4,18 @@
 \alias{AKO_withW}
 \title{Aggregated Knockoff with Precomputed Test Statistics \eqn{W} From User-Defined Methods}
 \usage{
-AKO_withW(W, q = 0.05, offset = 0, gamma = 0.3)
+AKO_withW(W.list, q = 0.05, offset = 0, gamma = 0.3, X.names = NULL)
 }
 \arguments{
-\item{W}{A list of test statistics from multiple knockoff filters. The length of the list should be the number of knockoff copies. Each element in the list should be a numeric vector of length \eqn{p} representing the test statistics.}
+\item{W.list}{A list of test statistics from multiple knockoff filters. The length of the list should be the number of knockoff copies. Each element in the list should be a numeric vector of length \eqn{p} representing the test statistics.}
 
 \item{q}{A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.}
 
 \item{offset}{An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.}
 
 \item{gamma}{A numeric value for quantile aggregation in the multiple knockoff p-value aggregation. Default is \eqn{0.3}.}
+
+\item{X.names}{A character vector of variable names. Default is \code{NULL}.}
 }
 \value{
 A list containing:

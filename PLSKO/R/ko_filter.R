@@ -78,6 +78,17 @@ ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...
   }
   if( is.numeric(y) ) y = as.vector(y)
 
+  # dimension check
+  if(nrow(X) != length(y)){
+    stop('The number of rows in X must be equal to the length of y')
+  }
+  if(ncol(X) != ncol(Xk)){
+    stop('The number of columns in X must be equal to the number of columns in Xk')
+  }
+  if(nrow(X) != nrow(Xk)){
+    stop('The number of rows in X must be equal to the number of rows in Xk')
+  }
+
   if(offset!=1 && offset!=0 && offset!="both") {
     stop('Input offset must be either 0, 1, or both')
   }
