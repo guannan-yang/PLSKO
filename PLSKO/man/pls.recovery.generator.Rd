@@ -4,7 +4,7 @@
 \alias{pls.recovery.generator}
 \title{Calculate \eqn{\hat{X}} by fitting PLS regression on its neighbours}
 \usage{
-pls.recovery.generator(Y, X, ncomp, keepX = rep(ncol(X), ncomp))
+pls.recovery.generator(Y, X, ncomp, keepX)
 }
 \description{
 Calculate \eqn{\hat{X}} by fitting PLS regression on its neighbours

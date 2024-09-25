@@ -424,17 +424,16 @@ with components: <br> <code>statistic</code>, <code>selected</code>,
 <p>You can install the development version of the package from GitHub
 using the following code:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># install.packages(&quot;devtools&quot;)</span></span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>devtools<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">&quot;guannan-yang/PLSKO/PLSKO&quot;</span>, <span class="at">quiet =</span> <span class="cn">TRUE</span>, <span class="at">upgrade =</span> <span class="st">&quot;never&quot;</span>)</span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; Warning: package &#39;PLSKO&#39; is in use and will not be installed</span></span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a></span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="fu">library</span>(PLSKO)</span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:</span></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co"># install.packages(c(&quot;knockoff&quot;,&quot;progress&quot;, &quot;parallel&quot;, &quot;doParallel&quot;, &quot;foreach&quot;))</span></span>
-<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#</span></span>
-<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co"># if (!require(&quot;BiocManager&quot;, quietly = TRUE))</span></span>
-<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#     install.packages(&quot;BiocManager&quot;)</span></span>
-<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co"># BiocManager::install(&quot;mixOmics&quot;)</span></span></code></pre></div>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co">#devtools::install_github(&quot;guannan-yang/PLSKO/PLSKO&quot;, quiet = TRUE, upgrade = &quot;never&quot;)</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="fu">library</span>(PLSKO)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co"># install.packages(c(&quot;knockoff&quot;,&quot;progress&quot;, &quot;parallel&quot;, &quot;doParallel&quot;, &quot;foreach&quot;))</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co"># if (!require(&quot;BiocManager&quot;, quietly = TRUE))</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#     install.packages(&quot;BiocManager&quot;)</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co"># BiocManager::install(&quot;mixOmics&quot;)</span></span></code></pre></div>
 </div>
 <div id="example-1-simulated-data" class="section level2">
 <h2>Example 1: Simulated data</h2>
@@ -499,9 +498,9 @@ result to see the selected variables.</p>
 <span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a></span>
 <span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co"># calculate FDP in this run</span></span>
 <span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>fdp <span class="ot">&lt;-</span> <span class="cf">function</span>(result) {</span>
-<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>  <span class="cf">if</span>(<span class="fu">class</span>(result) <span class="sc">==</span> <span class="st">&quot;knockoff.result&quot;</span>) fdr <span class="ot">=</span> <span class="fu">sum</span>(beta[result<span class="sc">$</span>selected] <span class="sc">==</span><span class="dv">0</span>) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">length</span>(result<span class="sc">$</span>selected), <span class="dv">1</span>)</span>
-<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>  <span class="cf">else</span> <span class="cf">if</span> (<span class="fu">class</span>(result) <span class="sc">==</span> <span class="st">&quot;AKO.result&quot;</span>) fdr <span class="ot">=</span> <span class="fu">sum</span>(beta[result<span class="sc">$</span>ako.s] <span class="sc">==</span><span class="dv">0</span>) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">length</span>(result<span class="sc">$</span>ako.s), <span class="dv">1</span>)</span>
-<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>  <span class="fu">return</span>(fdr)</span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>  <span class="cf">if</span>(<span class="fu">class</span>(result) <span class="sc">==</span> <span class="st">&quot;knockoff.result&quot;</span>) fdp <span class="ot">=</span> <span class="fu">sum</span>(beta[result<span class="sc">$</span>selected] <span class="sc">==</span><span class="dv">0</span>) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">length</span>(result<span class="sc">$</span>selected), <span class="dv">1</span>)</span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>  <span class="cf">else</span> <span class="cf">if</span> (<span class="fu">class</span>(result) <span class="sc">==</span> <span class="st">&quot;AKO.result&quot;</span>) fdp <span class="ot">=</span> <span class="fu">sum</span>(beta[result<span class="sc">$</span>ako.s] <span class="sc">==</span><span class="dv">0</span>) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">length</span>(result<span class="sc">$</span>ako.s), <span class="dv">1</span>)</span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>  <span class="fu">return</span>(fdp)</span>
 <span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a>}</span>
 <span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
 <span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
@@ -678,26 +677,102 @@ samples with 81 genes with elevated expression in placenta. The proteins
 are a subset of proteomics data (from a multi-omics pre-eclampsia study
 (Marić et al. 2022)) that were inferred released by placenta, according
 to Degnes et al. (2022).</p>
-<div id="semi-synthetic-data-based-on-the-rna_placenta-dataset" class="section level3">
-<h3>Semi-synthetic data based on the <code>rna</code>_placenta`
+<div id="semi-synthetic-data-based-on-the-prot_placenta-dataset" class="section level3">
+<h3>Semi-synthetic data based on the <code>prot_placenta</code>
 dataset</h3>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">data</span>(<span class="st">&quot;cfRNA_placenta&quot;</span>)</span>
-<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>X <span class="ot">=</span> cfRNA_placenta<span class="sc">$</span>counts</span>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">data</span>(<span class="st">&quot;prot_placenta&quot;</span>)</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>X <span class="ot">=</span> <span class="fu">as.matrix</span>(prot_placenta<span class="sc">$</span>abundance)</span>
 <span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
 <span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co">#generate the response variable y from a linear model</span></span>
 <span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
 <span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>n <span class="ot">=</span> <span class="fu">nrow</span>(X)</span>
 <span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>p <span class="ot">=</span> <span class="fu">ncol</span>(X)</span>
-<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>k <span class="ot">=</span> <span class="dv">10</span></span>
-<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>a <span class="ot">=</span> <span class="dv">5</span></span>
-<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>nonzero <span class="ot">=</span> <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span>p, k)</span>
-<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>beta <span class="ot">=</span> a <span class="sc">*</span> (<span class="dv">1</span><span class="sc">:</span>p <span class="sc">%in%</span> nonzero) <span class="sc">/</span> <span class="fu">sqrt</span>(n)</span>
-<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>y <span class="ot">=</span> X <span class="sc">%*%</span> beta <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span></code></pre></div>
-<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># run the knockoff filter with default settings</span></span>
-<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="co">#result = plsko_filter(X, y)</span></span></code></pre></div>
-<p>We first generate the knockoff variables using the function, then
-calculate the importance scores using the function, and finally perform
-the knockoff filtering using the function.</p>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>k <span class="ot">=</span> <span class="dv">8</span> <span class="co"># number of important variables with nonzeros coefficients</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>nonzero <span class="ot">=</span> <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span>p, k) <span class="co"># randomly select 8 important variables</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>beta <span class="ot">=</span> <span class="fu">as.numeric</span>(<span class="dv">1</span><span class="sc">:</span>p <span class="sc">%in%</span> nonzero) <span class="co"># assign non-zero coefficients to the important variables</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>y <span class="ot">=</span> X <span class="sc">%*%</span> beta </span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsko_filter</span>(X, y) </span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="co">#&gt; plsko_filter(X = X, y = y)</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt;    HSPB1    TIMP3 SERPINE1   DIABLO SERPINE2     TFPI  ANGPTL4    GREM1 </span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;        1        4       11       14       15       18       23       27 </span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt;      IL6      NOG </span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt;       29       34</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="co">#&gt; [1] 0.2</span></span></code></pre></div>
+<p>The result shows that the PLSKO method selected 10 important
+variables with a FDP of 0.2 (all 8 true positive plus 2 false
+discoveries), higher than the default FDR level of 0.05. This might be
+due to the small number of important variables.</p>
+<p>Another reason is that in real data, the true distrution is unknown
+and highly correlated, we might want to include more neighbours to
+control the correlations among variables, plus include more components
+in PLS regression to capture the structure of the data.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">plsko_filter</span>(X, y, <span class="at">threshold.abs =</span> <span class="dv">0</span>, <span class="at">ncomp =</span> <span class="dv">5</span>, <span class="at">sparsity =</span> <span class="fl">0.8</span>) <span class="co"># set the absolute correlation threshold to 0 (every one is neighour with each other), the number of components to 5, and the sparsity level in PLS regression to 0.8</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="co">#&gt; plsko_filter(X = X, y = y, threshold.abs = 0, ncomp = 5, sparsity = 0.8)</span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co">#&gt; Selected variables:</span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt;    HSPB1    TIMP3 SERPINE1   DIABLO     TFPI  ANGPTL4    GREM1      NOG </span></span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co">#&gt;        1        4       11       14       18       23       27       34</span></span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>We observed that the PLSKO method selected all 8 important variables
+with a FDP of 0.</p>
+<p>Let’s see how aggregating multiple knockoff results using the PLS-AKO
+method.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>result <span class="ot">=</span> <span class="fu">plsAKO</span>(X, y, <span class="at">threshold.abs =</span> <span class="dv">0</span>, <span class="at">ncomp =</span> <span class="dv">5</span>, <span class="at">sparsity =</span> <span class="fl">0.8</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="co">#&gt; plsAKO(X = X, y = y, threshold.abs = 0, ncomp = 5, sparsity = 0.8)</span></span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="co">#&gt; Selected variables (AKO):</span></span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="co">#&gt;    HSPB1    TIMP3 SERPINE1   DIABLO     TFPI  ANGPTL4    GREM1      NOG </span></span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a><span class="co">#&gt;        1        4       11       14       18       23       27       34 </span></span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt; Frequency of selected variables from 25 iterations of single-run knockoffs:</span></span>
+<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a><span class="co">#&gt;  1  4 11 14 15 18 23 27 29 34 </span></span>
+<span id="cb12-12"><a href="#cb12-12" tabindex="-1"></a><span class="co">#&gt; 25 25 25 25  4 25 25 25  4 25</span></span>
+<span id="cb12-13"><a href="#cb12-13" tabindex="-1"></a><span class="fu">fdp</span>(result)</span>
+<span id="cb12-14"><a href="#cb12-14" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>Similar to the PLSKO method, the PLS-AKO method selected all 8
+important variables with a FDP of 0, although 7 of these 25 iteration
+include at one false discovery. This shows how the PLS-AKO method can
+improve the stability of the result.</p>
+</div>
+</div>
+<div id="example-3-advanced-usage-of-plsko-package" class="section level2">
+<h2>Example 3: Advanced usage of <code>PLSKO</code> package</h2>
+<p>Now as you know the basic usage of the <code>PLSKO</code> package, we
+will show you how to use the package in a more advanced way. Our package
+also provides separate function for each step of the knockoff framework,
+which allows users to have more flexibility in the workflow. In this
+example, we show how to use the <code>PLSKO</code> package to apply the
+PLSKO method to the <code>cfRNA_placenta</code> dataset with a synthetic
+response variable.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="fu">data</span>(<span class="st">&quot;cfRNA_placenta&quot;</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>X <span class="ot">=</span> <span class="fu">as.matrix</span>(cfRNA_placenta<span class="sc">$</span>counts)</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="co">#generate the response variable y from a linear model</span></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>n <span class="ot">=</span> <span class="fu">nrow</span>(X)</span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>p <span class="ot">=</span> <span class="fu">ncol</span>(X)</span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a>k <span class="ot">=</span> <span class="dv">8</span> <span class="co"># number of important variables with nonzeros coefficients</span></span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a>nonzero <span class="ot">=</span> <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span>p, k) <span class="co"># randomly select 8 important variables</span></span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a></span>
+<span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a>beta <span class="ot">=</span> <span class="fu">as.numeric</span>(<span class="dv">1</span><span class="sc">:</span>p <span class="sc">%in%</span> nonzero) <span class="co"># assign non-zero coefficients to the important variables</span></span>
+<span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a>y <span class="ot">=</span> X <span class="sc">%*%</span> beta </span></code></pre></div>
+<div id="step-1-knockoff-variable-generation" class="section level3">
+<h3>Step 1: Knockoff Variable Generation</h3>
+<p>First, we generate the knockoff variables using the function. The
+function requires the predictor matrix as input and returns a matrix of
+knockoff variables.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># generate the knockoff variables</span></span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>plsko_default <span class="ot">=</span> <span class="fu">plsko</span>(X) </span></code></pre></div>
 </div>
 </div>
 

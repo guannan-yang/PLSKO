@@ -9,7 +9,7 @@ knitr::opts_chunk$set(
 
 ## ----installation-------------------------------------------------------------
 # install.packages("devtools")
-devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE, upgrade = "never")
+#devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE, upgrade = "never")
 
 library(PLSKO)
 
@@ -52,9 +52,9 @@ which(beta != 0)
 
 # calculate FDP in this run
 fdp <- function(result) {
-  if(class(result) == "knockoff.result") fdr = sum(beta[result$selected] ==0) / max(length(result$selected), 1)
-  else if (class(result) == "AKO.result") fdr = sum(beta[result$ako.s] ==0) / max(length(result$ako.s), 1)
-  return(fdr)
+  if(class(result) == "knockoff.result") fdp = sum(beta[result$selected] ==0) / max(length(result$selected), 1)
+  else if (class(result) == "AKO.result") fdp = sum(beta[result$ako.s] ==0) / max(length(result$ako.s), 1)
+  return(fdp)
 }
 fdp(result)
 
@@ -111,21 +111,49 @@ fdp(result)
 # fdp(result)
 
 ## ----eg2_semi_synthetic_generate----------------------------------------------
-data("cfRNA_placenta")
-X = cfRNA_placenta$counts
+data("prot_placenta")
+X = as.matrix(prot_placenta$abundance)
 
 #generate the response variable y from a linear model
 set.seed(1)
 n = nrow(X)
 p = ncol(X)
-k = 10
-a = 5
-nonzero = sample(1:p, k)
-beta = a * (1:p %in% nonzero) / sqrt(n)
-y = X %*% beta + rnorm(n)
+k = 8 # number of important variables with nonzeros coefficients
+nonzero = sample(1:p, k) # randomly select 8 important variables
+
+beta = as.numeric(1:p %in% nonzero) # assign non-zero coefficients to the important variables
+y = X %*% beta 
 
 
 ## ----eg2_plsko_pipeline-------------------------------------------------------
-# run the knockoff filter with default settings
-#result = plsko_filter(X, y)
+result = plsko_filter(X, y) 
+print(result)
+fdp(result)
+
+## ----eg2_plsko_pipeline_custom------------------------------------------------
+result <- plsko_filter(X, y, threshold.abs = 0, ncomp = 5, sparsity = 0.8) # set the absolute correlation threshold to 0 (every one is neighour with each other), the number of components to 5, and the sparsity level in PLS regression to 0.8
+print(result)
+fdp(result)
+
+## ----eg2_plsako_pipeline------------------------------------------------------
+result = plsAKO(X, y, threshold.abs = 0, ncomp = 5, sparsity = 0.8)
+print(result)
+fdp(result)
+
+## ----eg3_advanced_usage_generatedata------------------------------------------
+data("cfRNA_placenta")
+X = as.matrix(cfRNA_placenta$counts)
+#generate the response variable y from a linear model
+set.seed(1)
+n = nrow(X)
+p = ncol(X)
+k = 8 # number of important variables with nonzeros coefficients
+nonzero = sample(1:p, k) # randomly select 8 important variables
+
+beta = as.numeric(1:p %in% nonzero) # assign non-zero coefficients to the important variables
+y = X %*% beta 
+
+## ----eg3_advanced_usage_knockoff----------------------------------------------
+# generate the knockoff variables
+plsko_default = plsko(X) 
 

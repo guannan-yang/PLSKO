@@ -113,10 +113,6 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
     X <- X %*% sample.order.mat
 
     mu <- colMeans(X)
-    call <- list(thres.abs = threshold.abs,
-                 thres.q = threshold.q,
-                 ncomp = ncomp,
-                 sparsity = sparsity)
 
     X <- scale(X, center = T, scale = F)
 
@@ -175,10 +171,7 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
   rownames(X_k) <- rownames(X)
   colnames(X_k) <- paste0(colnames(X),"k")
 
-  # If ncomp is not provided, set it the minimum of p/2 and the empirical number of components
-  if(is.null(ncomp)){
-    r_emp <- r_criterion(X, rmax = rmax)
-  }
+
 
   # Initialize the progress bar
   pb <- progress_bar$new(
@@ -210,10 +203,14 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
       X.run <- cbind(X.nb, X_k.nb)
       Y <- X[,i]
       if(is.null(ncomp)){ #if ncomp is not provided, set it the minimum of p/2 and the empirical number of components
+        r_emp <- r_criterion(X, rmax = rmax)
         this.ncomp <- ceiling(min(ncol(X.nb)/2, r_emp))
       }
-      else this.ncomp <- ncomp
+      else{
+        this.ncomp <- ncomp
+      }
 
+      this.ncomp <- min(this.ncomp, ncol(X.run)) #maximum ncomp is the number of variables minus one in the regression
       this.ncomp <- max(this.ncomp, 2) #minimum 2 components
 
       #when sparsity < 1, sparse PLS regression is used for conditional distribution with sparse*p kept on each comp
@@ -253,7 +250,7 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
 #' @rdname pls.recovery.generator
 #' @keywords internal
 #'
-pls.recovery.generator <- function(Y, X, ncomp, keepX = rep(ncol(X), ncomp)){
+pls.recovery.generator <- function(Y, X, ncomp, keepX){
   X <- as.data.frame(X)
   #X <- X[!duplicated(as.list(X))]
   n <- nrow(X)
