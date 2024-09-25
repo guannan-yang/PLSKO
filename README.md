@@ -8,7 +8,7 @@ devtools::install_github("guannan-yang/PLSKO/PLSKO")
 ```
 
 # Vignette 
-[View the vignette](https://guannan-yang.github.io/docs/PLSKO.html)
+[View the vignette](https://guannan-yang.github.io/PLSKO/docs/PLSKO.html)
 
 # Knockoff Steps and Functions Pipeline
 
