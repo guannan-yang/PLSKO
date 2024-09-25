@@ -13,6 +13,8 @@ Package and source codes used in paper: `PLSKO: a robust knockoff generator to c
 - **Input: Target False Discovery Rate (FDR) Level**  
   Threshold: `q ∈ (0, 1]`
 
+- **Output: `knockoff.result` object with Selected variables**
+
 
 ## Knockoff framework main steps and corresponding functions included in this package
 
@@ -25,3 +27,6 @@ Package and source codes used in paper: `PLSKO: a robust knockoff generator to c
 
 ### Additional Notes:
 - ^The workflow includes generating knockoff variables, importance score calculation, and filtering.
+
+## Vignette 
+[View the vignette](https://github.com/guannan-yang/PLSKO/blob/main/PLSKO/vignettes/PLSKO.html)
