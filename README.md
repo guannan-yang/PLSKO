@@ -1,6 +1,15 @@
 # PLSKO
 Package and source codes used in paper: `PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection'
 
+# Installation
+```r
+# install.packages("devtools")
+devtools::install_github("guannan-yang/PLSKO/PLSKO")
+```
+
+# Vignette 
+[View the vignette](https://guannan-yang.github.io/PLSKO/docs/PLSKO.html)
+
 # Knockoff Steps and Functions Pipeline
 
 ## Genernal Input
@@ -28,11 +37,4 @@ Package and source codes used in paper: `PLSKO: a robust knockoff generator to c
 ### Additional Notes:
 - ^The workflow includes generating knockoff variables, importance score calculation, and filtering.
 
-### Installation
-```r
-# install.packages("devtools")
-devtools::install_github("guannan-yang/PLSKO/PLSKO")
-```
 
-## Vignette 
-[View the vignette](https://guannan-yang.github.io/PLSKO/docs/PLSKO.html)
