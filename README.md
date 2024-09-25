@@ -28,5 +28,11 @@ Package and source codes used in paper: `PLSKO: a robust knockoff generator to c
 ### Additional Notes:
 - ^The workflow includes generating knockoff variables, importance score calculation, and filtering.
 
+### Installation
+```r
+# install.packages("devtools")
+devtools::install_github("guannan-yang/PLSKO/PLSKO")
+```
+
 ## Vignette 
 [View the vignette](https://guannan-yang.github.io/PLSKO/docs/PLSKO.html)
