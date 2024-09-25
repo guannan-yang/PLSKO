@@ -29,4 +29,4 @@ Package and source codes used in paper: `PLSKO: a robust knockoff generator to c
 - ^The workflow includes generating knockoff variables, importance score calculation, and filtering.
 
 ## Vignette 
-[View the vignette](https://guannan-yang.github.io/PLSKO/blob/main/docs/PLSKO.html)
+[View the vignette](https://guannan-yang.github.io/PLSKO/main/docs/PLSKO.html)
