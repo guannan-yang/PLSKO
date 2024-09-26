@@ -1,0 +1,1286 @@
+---
+title: "Multi omics real data"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dpi = 100, 
+                      echo=F, 
+                      warning=F, message=F, eval = TRUE,
+                      fig.show=TRUE, fig.width= 5,fig.height= 5, out.width = '50%', fig.ncol = 1, fig.path= 'Figures/')
+
+setwd("./plsko_writing/paper codes/multiomics_semi_casestudy")
+
+library(edgeR)
+library(limma)
+library(tidyverse)
+library(mixOmics)
+library(knockoff)
+require(glmnet)
+require(graphics)
+library(reshape2)
+library(rARPACK)
+library(doParallel)
+
+source.path <- "./plsko_writing/paper codes/RSources"
+source(paste0(source.path, "data_sim1.R"))
+source(paste0(source.path, "plsko_plsonly.R"))
+source(paste0(source.path, 'KO_perf.R'))
+source(paste0(source.path, 'KOBT/create.pc.knockoff.R'))
+source(paste0(source.path, 'hdko.R'))
+source(paste0(source.path, 'mvr_julia.R'))
+source(paste0(source.path, 'ako_run.R'))
+source(paste0(source.path, 'ako_with_ko_run.R'))
+
+
+julia <- julia_setup()
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+```
+
+Data were downloaded from: https://github.com/ivanam5/Multiomics_ Preeclampsia
+Please refer to the original paper for more information: Marić I, Contrepois K, Moufarrej MN et al. Early prediction and longitudinal modeling of preeclampsia from multiomics. PATTER 2022;3, DOI: 10.1016/j.patter.2022.100655.
+
+```{r loading data}
+load("data/raw_data.rda")
+sample.info <- read.csv("./data/proteome_edited.csv")
+
+sample.id <- colnames(metabolome_urine_data_raw)[1:172]
+sub.id <- stringr::str_sub(sample.id, 2, 6)
+
+sample.group.time1 <- proteome_data_raw[,1:3] %>% arrange(Subject_ID) %>% filter(TimePoint=="1st Tri")
+
+sample.time1 <- data.frame(sample.id, Subject_ID = sub.id) %>%  filter(!duplicated(Subject_ID)) %>% filter(.$Subject_ID %in% sample.group.time1$Subject_ID) %>% arrange(Subject_ID) %>% merge(sample.group.time1)
+
+#batch information
+batch1 <- read.csv("patientsalldata6.csv")
+batch2 <- read.csv("patients16.csv")
+
+```
+#Semi-synthetic data
+## proteomics
+```{r preprocess}
+prot.time1 <- proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",-c(1:3)] %>% log2()
+rownames(prot.time1) <- proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri","Subject_ID"]
+
+# batcheffect removal
+batch.prot <- as.numeric(rownames(prot.time1)%in% batch1$x)
+prot.time1.batrm <- limma::removeBatchEffect(t(prot.time1), batch = batch.prot)
+prot.time1.batrm <- t(prot.time1.batrm)
+```
+
+
+```{r ko semi sim}
+# p = 50, 100, 150
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+r_emp_X <- r_criterion(prot.time1, rmax = 10)
+
+# p_x = 100, 150, 200, p_s = 25
+it = 50
+test <- foreach(i = rep(1:it,3), px = rep(seq(40, 120, 40), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             res <- real_sim(prot.time1.batrm, p_x = px, p_s = 15, ko.diagnosis = F, seed = i, call.var = "p_x", plsko.ncomp = 5, plsko.threshold.q = 0.8, q = 0.1)
+                           }
+test_df <- do.call("rbind",  test )
+saveRDS(test_df, "./prot_real.rds")
+
+```
+
+```{r plot}
+library(tidyverse)
+library(ggpubr)
+library(viridis)
+library(scales)
+library(mixOmics)
+test_df <- readRDS("./prot_real.rds")
+test_df$P <- as.factor(test_df$var)
+test_df$ko.method[test_df$ko.method == "plsonly"] <- "PLSKO"
+test_df$ko.method <- factor(test_df$ko.method)
+
+col_scip <- method.colour[levels(test_df$ko.method)]
+
+
+test_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_fdr.plot
+
+test_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_pow.plot
+
+prot.semi <- ggarrange(test_p_fdr.plot, test_p_pow.plot, nrow = 1, ncol = 2, common.legend = T)
+
+# plus 
+test_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test_p_fdr_plus.plot
+
+test_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_pow_plus.plot
+
+# run time
+test_p_time.plot <- ggplot(mapping = aes(x = P, y = run.time), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_time.plot
+```
+### mvr
+```{r mvr test, eval=FALSE}
+
+it = 50
+set.seed(1)
+
+test.mvr <- foreach(i = rep(1:it,3), px = rep(seq(40, 120, 40), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr(prot.time1.batrm, p_x = px, p_s = 25, ko.diagnosis = F, seed = i, call.var = "p_x", q = 0.1)
+                           }
+real_mvr_df <- do.call("rbind",  test.mvr )
+saveRDS(real_mvr_df, "./prot_mvr.rds")
+```
+
+```{r mvr plot}
+real_all_mvr_df <- readRDS("./prot_mvr.rds")
+real_all_mvr_df$P <- factor(real_all_mvr_df$var, levels = c("40","80","120"))
+real_all_mvr_df$ko.method[real_all_mvr_df$ko.method=="sdp_JS"] <- "JS"
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+col_scip <- method.colour[levels(real_all_mvr_df$ko.method)]
+
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+
+test.mvr_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_fdr.plot
+
+test.mvr_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_pow.plot
+
+prot.semi.mvr <-  ggarrange(test.mvr_p_fdr.plot, test.mvr_p_pow.plot, nrow = 1, ncol = 2, common.legend = T)
+
+ggarrange(prot.semi, prot.semi.mvr, nrow = 2, ncol = 1, common.legend = F)
+
+# plus 
+test.mvr_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test.mvr_p_fdr_plus.plot
+
+test.mvr_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_pow_plus.plot
+
+# run time
+test.mvr_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_time.plot
+```
+### mvr norm
+```{r mvr norm}
+
+test.mvr.norm <- foreach(i = rep(1:it,3), px = rep(seq(40, 120, 40), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr_norm(prot.time1.batrm, p_x = px, p_s = 15, ko.diagnosis = F, seed = i, call.var = "p_x", q = 0.1)
+                           }
+real_mvr.norm_df <- do.call("rbind",  test.mvr.norm )
+saveRDS(real_mvr.norm_df, "./real_mvr_norm.rds")
+```
+
+```{r mvr plot norm}
+real_all_mvr.norm_df <- readRDS("./real_mvr_norm.rds")
+real_all_mvr.norm_df$p_var <- factor(real_all_mvr.norm_df$var, levels = c("40","80","120"))
+real_all_mvr.norm_df$ko.method <- factor(real_all_mvr.norm_df$ko.method)
+
+test.mvr.norm_p_fdr.plot <- ggplot(mapping = aes(x = p_var, y = fdp), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test.mvr.norm_p_fdr.plot
+
+test.mvr.norm_p_pow.plot <- ggplot(mapping = aes(x = p_var, y = tpp), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr.norm_p_pow.plot
+
+# plus 
+test.mvr.norm_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test.mvr.norm_p_fdr_plus.plot
+
+test.mvr.norm_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr.norm_p_pow_plus.plot
+
+# run time
+test.mvr.norm_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr.norm_p_time.plot
+```
+## metabolome (urine)
+```{r metabolome urine data process }
+metabo <- metabolome_urine_data_raw[,1:172] %>% log2()
+metabo.sample <- colnames(metabo)
+metabo.sub <- stringr::str_sub(metabo.sample, 2,6)
+
+time1.sample <- (!duplicated(metabo.sub))&(metabo.sub %in% as.character(sample.group.time1$Subject_ID))
+
+metabo.time1 <- metabo[,time1.sample] 
+#rownames(metabo.time1) <- metabolome_urine_data_raw$Compounds_ID
+metabo.time1 <- t(metabo.time1)
+rownames(metabo.time1) <- metabo.sub[time1.sample]
+
+# batcheffect removal
+plotIndiv(pca(metabo.time1), group = as.factor(row.names(metabo.time1)%in%batch1$x))
+batch.prot <- as.numeric(rownames(metabo.time1)%in% batch1$x)
+metabo.time1.batrm <- limma::removeBatchEffect(t(metabo.time1), batch = batch.prot)
+metabo.time1.batrm <- t(metabo.time1.batrm)
+plotIndiv(pca(metabo.time1.batrm), group = as.factor(row.names(metabo.time1)%in%batch1$x))
+
+```
+
+```{r ko semi sim metabolome}
+# p = 50, 100, 150
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+r_emp_X <- r_criterion(metabo.time1, rmax = 10)
+
+# p_x = 100, 150, 200, p_s = 25
+it = 50
+test <- foreach(i = rep(1:it,3), px = rep(seq(40, 120, 40), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             res <- real_sim(metabo.time1, p_x = px, p_s = 15, ko.diagnosis = F, seed = i, call.var = "p_x", plsko.ncomp = 5, plsko.threshold.q = 0.8, q = 0.1)
+                           }
+test_df <- do.call("rbind",  test )
+saveRDS(test_df, "./metabolome_real.rds")
+
+```
+
+```{r meta plot}
+test_df <- readRDS("./metabolome_real.rds")
+test_df$P <- as.factor(test_df$var)
+test_df$ko.method[test_df$ko.method == "plsonly"] <- "PLSKO"
+test_df$ko.method <- factor(test_df$ko.method)
+
+col_scip <- method.colour[levels(test_df$ko.method)]
+
+
+test_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_fdr.plot
+
+test_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_pow.plot
+
+metabol.semi <- ggarrange(test_p_fdr.plot, test_p_pow.plot, nrow = 1, ncol = 2, common.legend = T)
+
+# plus 
+test_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test_p_fdr_plus.plot
+
+test_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_pow_plus.plot
+
+# run time
+test_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_time.plot
+```
+
+### mvr
+
+```{r mvr test metabolome, eval=FALSE}
+
+it = 50
+set.seed(1)
+
+test.mvr <- foreach(i = rep(1:it,3), px = rep(seq(40, 120, 40), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr(metabo.time1, p_x = px, p_s = 25, ko.diagnosis = F, seed = i, call.var = "p_x", q = 0.1)
+                           }
+real_mvr_df <- do.call("rbind",  test.mvr )
+saveRDS(real_mvr_df, "./metabolome_mvr.rds")
+```
+
+```{r mvr plot metabolome}
+real_all_mvr_df <- readRDS("./metabolome_mvr.rds")
+real_all_mvr_df$P <- factor(real_all_mvr_df$var, levels = c("40","80","120"))
+real_all_mvr_df$ko.method[real_all_mvr_df$ko.method=="sdp_JS"] <- "JS"
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+col_scip <- method.colour[levels(real_all_mvr_df$ko.method)]
+
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+
+test.mvr_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_fdr.plot
+
+test.mvr_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_pow.plot
+
+metabol.semi.mvr <-  ggarrange(test.mvr_p_fdr.plot, test.mvr_p_pow.plot, nrow = 1, ncol = 2, common.legend = T)
+
+ggarrange(metabol.semi, metabol.semi.mvr, nrow = 2, ncol = 1, common.legend = F)
+
+# plus 
+test.mvr_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test.mvr_p_fdr_plus.plot
+
+test.mvr_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_pow_plus.plot
+
+# run time
+test.mvr_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_time.plot
+```
+
+## microbiome
+```{r microbiome preprocess}
+
+# filtering variables with excessive 0s
+microbiome_counts <- microbiome_data_raw[,-c(1:12)]
+
+# examine almost identical variables and only keep one for each highly-correlated cluster
+remove_highly_correlated <- function(data, thres = 0.95) {
+  # Compute the correlation matrix between variables
+  cor_matrix <- cor(data)
+  
+  # Create a logical matrix to mark which columns need to be removed
+  remove_cols <- logical(ncol(cor_matrix))
+  
+  for (i in 1:(ncol(cor_matrix) - 1)) {
+    for (j in (i + 1):ncol(cor_matrix)) {
+      # Check if the correlation is above the threshold
+      if (abs(cor_matrix[i, j]) > thres) {
+        # If the correlation is above the threshold (0.95), mark the variable to be removed
+        if (!remove_cols[j]) {
+          remove_cols[j] <- TRUE
+        }
+      }
+    }
+  }
+  
+  # Remove variables with high correlation from the data frame
+  data_subset <- data[, !remove_cols]
+  
+  return(data_subset)
+}
+
+# remove exactly same columns
+mb.counts <- remove_highly_correlated(microbiome_counts, thres = 1-10e-6) #820 var left
+#test
+# cor.mb <- cor(mb.counts)
+# diag(cor.mb) <- 0
+# heatmap(cor.mb,scale = "none")
+# range(unlist(cor.mb))
+
+#index.keep <- which(colSums(mb.counts)*100/(sum(colSums(mb.counts))) > 0.01)
+
+# remove low abundant OTUs in time 1 
+index.keep <- which(colSums(mb.counts[microbiome_data_raw$timepoint==1,])*100/(sum(colSums(mb.counts[microbiome_data_raw$timepoint==1,]))) > 0.01)
+
+
+microbiome.keep <- mb.counts[, index.keep] #162 OTUs left
+
+# add offset
+microbiome.keep <- microbiome.keep+0.01
+
+# CLR Transformation
+mb.clr <- logratio.transfo(microbiome.keep, logratio = 'CLR')
+class(mb.clr) <- 'matrix' 
+
+# filter time 1 samples
+mb.time1 <- mb.clr[microbiome_data_raw$timepoint==1,]
+rownames(mb.time1) <- microbiome_data_raw$individual[microbiome_data_raw$timepoint==1]
+
+
+#batch effect removal
+plotIndiv(pca(mb.time1), group = as.factor(row.names(mb.time1)%in%batch1$x))
+batch.prot <- as.numeric(rownames(mb.time1)%in% batch1$x)
+mb.time1.batrm <- limma::removeBatchEffect(t(mb.time1), batch = batch.prot)
+mb.time1.batrm <- t(mb.time1.batrm)
+plotIndiv(pca(mb.time1.batrm), group = as.factor(row.names(mb.time1.batrm)%in%batch1$x))
+
+```
+
+```{r taxonomic assignment, eval = F}
+library(dada2)
+
+mb.taxa <- assignTaxonomy(colnames(mb.time1), "data/silva_nr99_v138.1_wSpecies_train_set.fa") # please find in https://zenodo.org/records/4587955
+saveRDS(mb.taxa, "microbiome_taxa.rds")
+
+mb.taxa <- readRDS("microbiome_taxa.rds")
+```
+
+
+```{r process highliy corrlated vars}
+# remove low variable OTUs in time 1 (they might have high abundance in later time points but not time 1)
+index.keep.time1 <- which(apply(mb.time1.batrm, 2, sd)!=0)
+
+microbiome.keep.time1 <- mb.time1.batrm[, index.keep.time1] #162 OTUs left
+
+#task 8 failed - "system is computationally singular: reciprocal condition number = 1.28389e-32
+cor.mb.time1 <- cor(microbiome.keep.time1)
+diag(cor.mb.time1) <- 0
+hist(unlist(cor.mb.time1), breaks = 50)
+range(unlist(cor.mb.time1)) # there still are variables which are almost the same (max cor= 0.9999972)
+
+# remove highly-correlated variable again
+mb.time1.rm <- remove_highly_correlated(microbiome.keep.time1, thres = 0.95)
+
+#144 variable left
+
+```
+
+```{r ko semi sim mb}
+# p = 50, 100, 150
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+r_emp_X <- r_criterion(mb.time1.rm, rmax = 10)
+
+# p_x = 50, 75, 98, p_s = 25
+it = 50
+test <- foreach(i = rep(1:it,3), px = rep(c(50, 100, ncol(mb.time1.rm)), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             res <- real_sim(mb.time1.rm, p_x = px, p_s = 15, ko.diagnosis = F, seed = i, call.var = "p_x", plsko.ncomp = 5, plsko.threshold.q = 0.8, q = 0.1, rmax = 10)
+                           }
+test_df <- do.call("rbind",  test )
+saveRDS(test_df, "./mb_real_144.rds")
+
+```
+
+```{r plot mb}
+library(tidyverse)
+library(ggpubr)
+library(viridis)
+library(scales)
+library(mixOmics)
+test_df <- readRDS("./mb_real_144.rds")
+test_df$P <- as.factor(test_df$var)
+test_df$ko.method[test_df$ko.method == "plsonly"] <- "PLSKO"
+test_df$ko.method <- factor(test_df$ko.method)
+
+col_scip <- method.colour[levels(test_df$ko.method)]
+
+
+test_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_fdr.plot
+
+test_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_pow.plot
+
+mb.semi <- ggarrange(test_p_fdr.plot, test_p_pow.plot, nrow = 1, ncol = 2, common.legend = T)
+
+
+# plus 
+test_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test_p_fdr_plus.plot
+
+test_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_pow_plus.plot
+
+# run time
+test_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_time.plot
+```
+### mvr
+```{r mvr test, eval=FALSE}
+
+it = 50
+set.seed(1)
+
+test.mvr <- foreach(i = rep(1:it,3), px = rep(c(50, 75, ncol(mb.time1.rm)), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr(mb.time1.rm, p_x = px, p_s = 15, ko.diagnosis = F, seed = i, call.var = "p_x", q = 0.1)
+                           }
+real_mvr_df <- do.call("rbind",  test.mvr )
+saveRDS(real_mvr_df, "./mb_mvr_94.rds")
+```
+
+```{r mvr plot}
+real_all_mvr_df <- readRDS("./mb_mvr_94.rds")
+real_all_mvr_df$P <- factor(real_all_mvr_df$var, levels = c("50","75","94"))
+real_all_mvr_df$ko.method[real_all_mvr_df$ko.method=="sdp_JS"] <- "JS"
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+col_scip <- method.colour[levels(real_all_mvr_df$ko.method)]
+
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+
+test.mvr_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_fdr.plot
+
+test.mvr_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_pow.plot
+
+mb.semi.mvr <-  ggarrange(test.mvr_p_fdr.plot, test.mvr_p_pow.plot, nrow = 1, ncol = 2, common.legend = T)
+
+ggarrange(mb.semi, mb.semi.mvr, nrow = 2, ncol = 1, common.legend = F)
+
+# plus 
+test.mvr_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red")
+test.mvr_p_fdr_plus.plot
+
+test.mvr_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_pow_plus.plot
+
+# run time
+test.mvr_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_time.plot
+```
+
+
+# real data analysis
+## Transcriptomcs
+```{r data process}
+multiomics_cpm <- read_csv("./data/multiomics_cpm_matched.csv")
+
+# filter low expression: at least 0.5 cpm in at least 75% of samples
+keep.gene <- apply(multiomics_cpm[,c(3:47,49:113)], 1, function(x){sum(x>0.5)>0.75*110})
+
+multiomics_filter <- multiomics_cpm[keep.gene,]
+rownames(multiomics_filter) <- multiomics_filter$gene_num
+
+
+# how many found elevated in placenta
+placenta_elevated <- read_tsv("../cfRNA_semi_casestudy/data/tissue_category_rna_placenta_elevated.tsv")
+
+multiomics_cpm_elevated <- multiomics_filter[multiomics_filter$gene_num %in% placenta_elevated$Ensembl,]
+#77 genes were found
+
+# kept time 1 sample only
+RNA_sample_sub <- substr(colnames(multiomics_cpm)[3:113], 9, 13)
+RNA_time1 <- RNA_sample_sub[!duplicated(RNA_sample_sub)] 
+#all(RNA_time1 %in% sample.time1$Subject_ID)
+
+cpm_elevated_time1 <- multiomics_cpm_elevated[,c(F,F,!duplicated(RNA_sample_sub))]
+RNA_time1_sample <- sample.time1[sample.time1$Subject_ID %in% RNA_time1,]
+#all(RNA_time1_sample$Subject_ID == RNA_time1)
+colnames(cpm_elevated_time1) <- RNA_time1
+rownames(cpm_elevated_time1) <- rownames(multiomics_filter)[multiomics_filter$gene_num %in% placenta_elevated$Ensembl]
+
+```
+
+```{r plsko cpm}
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(t(cpm_elevated_time1), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(cpm_elevated_time1), rmax = 6)
+
+RNA.plsko.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(cpm_elevated_time1), method = "PLSKO.only", threshold.q = 0, r = r_emp)
+                      S <- ko.filter(X = t(cpm_elevated_time1), Xk = ko$ko, y = RNA_time1_sample$SampleGroup, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(RNA.plsko.placenta, "RNA_plsko_placenta.rds")
+
+RNA.plsko.placenta <- readRDS("RNA_plsko_placenta.rds")
+s.placenta <- lapply(RNA.plsko.placenta , function(x){x$S$S})
+s.placenta.freq <- as.data.frame(table(unlist(s.placenta))) %>% mutate(gene_num = rownames(cpm_elevated_time1)[as.numeric(as.character(Var1))])
+
+```
+
+```{r cpm ako}
+cpm.ko.list <- lapply(RNA.plsko.placenta, function(x){
+  x$ko$ko
+})
+
+cpm.ako <- AKO.wko(X = t(cpm_elevated_time1), y = RNA_time1_sample$SampleGroup, Xko.list = cpm.ko.list, w.method = "lasso.logistic")
+saveRDS(cpm.ako, "cpm_ako.rds")
+cpm.ako <- readRDS("cpm_ako.rds")
+colnames(t(cpm_elevated_time1))[cpm.ako$ako.s]
+
+```
+
+### transcriptomics HPA v23
+```{r cpm v23}
+placenta_elevated_v23 <- readRDS("C:/Users/guannany/OneDrive - The University of Melbourne/PhD/database/RNA type/placenta_3fold.rds")
+
+multiomics_cpm_elevated_v23 <- multiomics_filter[multiomics_filter$gene_num %in% placenta_elevated_v23$Gene,]
+#86 genes were found
+
+# kept time 1 sample only
+RNA_sample_sub <- substr(colnames(multiomics_cpm)[3:113], 9, 13)
+RNA_time1 <- RNA_sample_sub[!duplicated(RNA_sample_sub)] 
+#all(RNA_time1 %in% sample.time1$Subject_ID)
+
+cpm_elevated_v23_time1 <- multiomics_cpm_elevated_v23[,c(F,F,!duplicated(RNA_sample_sub))]
+RNA_time1_sample <- sample.time1[sample.time1$Subject_ID %in% RNA_time1,]
+#all(RNA_time1_sample$Subject_ID == RNA_time1)
+colnames(cpm_elevated_v23_time1) <- RNA_time1
+rownames(cpm_elevated_v23_time1) <- rownames(multiomics_filter)[multiomics_filter$gene_num %in% placenta_elevated_v23$Gene]
+```
+
+
+```{r cmp v23 plsko}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+plot(pca(t(cpm_elevated_v23_time1), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(cpm_elevated_v23_time1), rmax = 5)
+
+cpm_v23.ako <- AKO(X = t(cpm_elevated_v23_time1), n_bootstraps = 50, ko.method = "PLSKO.only",
+                        y = RNA_time1_sample$SampleGroup,
+                        w.method = "lasso.logistic", threshold.q = 0, r = r_emp)
+saveRDS(cpm_v23.ako, "cpm_v23_ako.rds")
+
+cpm_v23.ako <- readRDS("cpm_v23_ako.rds")
+colnames(t(cpm_elevated_v23_time1))[cpm_v23.ako$ako.s]
+
+table(unlist(cpm_v23.ako$s))
+```
+
+
+#### limma clipper cpm v23
+```{r limma cpm v23}
+cpm.dge <- DGEList(cpm_elevated_v23_time1, sample = RNA_time1_sample)
+design <- model.matrix(~cpm.dge$samples$SampleGroup)
+
+v <- voom(cpm.dge, design)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,, drop = F]
+
+row.names(limma.sig)
+```
+
+```{r clipper cpm v23}
+
+library(Clipper)
+cpm.placenta.pe <- cpm.dge$counts[,cpm.dge$samples$SampleGroup=="PE"]
+cpm.placenta.control <- cpm.dge$counts[,cpm.dge$samples$SampleGroup=="Term"]
+
+cpm_clipper.selected <- lapply(1:50, function(x){Clipper(cpm.placenta.pe, cpm.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(cpm_clipper.selected, "cpm_v23_placenta_clipper.rds")
+
+placenta_clipper.freq <- as.data.frame(table(unlist(cpm_clipper.selected)))
+```
+
+```{r wilcoxon cpm v23}
+wilcox.placenta.cpm <- lapply(1:nrow(cpm_elevated_v23_time1), function(gene.i){
+  wilcox.test(cpm.placenta.control[gene.i,], cpm.placenta.pe[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.placenta.cpm))
+which(wilcox.placenta.p.adj<0.05)
+
+rownames(cpm_elevated_time1$counts)[which(wilcox.placenta.p.adj<0.05)]
+
+```
+
+## proteins
+```{r prot plsko}
+prot_elevated <- prot.time1.batrm[,colnames(prot.time1.batrm) %in% placenta_elevated$Gene]
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(prot_elevated, ncomp =10)$cum.var)
+r_emp <- r_criterion(t(log_cpm_elevated_time1), rmax = 5)
+
+prot.plsko.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(prot_elevated, method = "PLSKO.only", threshold.q = 0, r = r_emp)
+                      S <- ko.filter(X = prot_elevated, Xk = ko$ko, y = proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(prot.plsko.placenta, "prot_plsko_placenta.rds")
+
+prot.plsko.placenta <- readRDS("prot_plsko_placenta.rds")
+s.prot.placenta <- lapply(prot.plsko.placenta , function(x){x$S$S})
+s.prot.placenta.freq <- as.data.frame(table(unlist(s.prot.placenta))) %>% mutate(gene_num = colnames(prot_elevated)[as.numeric(as.character(Var1))])
+s.prot.placenta_final <- s.prot.placenta.freq %>% filter(Freq>25)
+
+```
+
+```{r proteome ako}
+
+prot.ko.list <- lapply(prot.plsko.placenta, function(x){
+  x$ko$ko
+})
+
+prot.ako <- AKO.wko(X = prot_elevated, y = proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup, Xko.list = prot.ko.list, w.method = "lasso.logistic")
+saveRDS(prot.ako, "prot_ako.rds")
+
+prot.ako <- readRDS("prot_ako.rds")
+colnames(prot_elevated)[prot.ako$ako.s]
+table(unlist(prot.ako$s))
+```
+### protein HPA v23
+```{r protein v23 ako}
+prot_elevated_23 <- prot.time1.batrm[,colnames(prot.time1.batrm) %in% placenta_elevated_v23$`Gene name`]
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(prot_elevated_23, ncomp =10)$cum.var)
+r_emp <- r_criterion(prot_elevated_23, rmax = 8)
+
+prot_v23.ako <- AKO(X = as.matrix(prot_elevated_23), n_bootstraps = 50, ko.method = "PLSKO.only",
+                        y = proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup,
+                        w.method = "lasso.logistic", threshold.q = 0, r = r_emp)
+saveRDS(prot_v23.ako, "prot_ako_v23.rds")
+
+prot_v23.ako <- readRDS("prot_ako_v23.rds")
+colnames(prot_elevated_23)[prot_v23.ako$ako.s]
+
+table(unlist(prot_v23.ako$s))
+```
+
+### limma protein v23
+```{r limma protein v23}
+design <- model.matrix(~proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup)
+
+#v <- voom(cpm.dge, design)
+limma.fit <- lmFit(t(prot_elevated_23), design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,, drop = F]
+
+row.names(limma.sig)
+```
+
+```{r protein clipper v23}
+library(Clipper)
+prot.placenta.pe <- t(prot_elevated_23)[,proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup=="PE"]
+prot.placenta.control <- t(prot_elevated_23)[,proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup=="Term"]
+
+prot_clipper.selected <- lapply(1:50, function(x){Clipper(prot.placenta.pe, prot.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(prot_clipper.selected, "prot_placenta_clipper_v23.rds")
+
+prot_clipper.selected <- readRDS("prot_placenta_clipper_v23.rds")
+prot_clipper.freq <- as.data.frame(table(unlist(prot_clipper.selected)))
+```
+
+```{r wilcoxon prot v23}
+wilcox.placenta.prot <- lapply(1:ncol(prot_elevated_23), function(gene.i){
+  wilcox.test(prot.placenta.pe[gene.i,], prot.placenta.control[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.placenta.prot))
+which(wilcox.placenta.p.adj<0.05)
+
+colnames(prot_elevated_23)[which(wilcox.placenta.p.adj<0.05)]
+
+```
+
+### protein with placenta release
+```{r prot placenta release}
+prot_placenta_rel <-  readxl::read_excel("data/12916_2022_2415_MOESM2_ESM.xlsx", 
+    sheet = "Placenta-specific released prot")
+
+prot_placenta_df <- prot.time1[,which(colnames(prot.time1) %in% prot_placenta_rel$GeneSymbol)]
+```
+
+```{r prot release plsko}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+plot(pca(prot_placenta_df, ncomp =10)$cum.var)
+r_emp <- r_criterion(t(prot_placenta_df), rmax = 10)
+
+prot_pla_rel.ako <- AKO(X = as.matrix(prot_placenta_df), n_bootstraps = 50, ko.method = "PLSKO.only",
+                        y = proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup,
+                        w.method = "lasso.logistic", threshold.q = 0, r = r_emp)
+saveRDS(prot_pla_rel.ako, "prot_ako_placenta_release.rds")
+
+prot_pla_rel.ako <- readRDS("prot_ako_placenta_release.rds")
+colnames(prot_placenta_df)[prot_pla_rel.ako$ako.s]
+
+table(unlist(prot_pla_rel.ako$s))
+```
+
+```{r protein mvr}
+prot_pla_rel.ako_mvr <- AKO(X = as.matrix(prot_placenta_df), n_bootstraps = 50, mvr=T,
+                        y = proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup,
+                        w.method = "lasso.logistic")
+saveRDS(prot_pla_rel.ako_mvr, "prot_ako_placenta_release_mvr.rds")
+
+colnames(prot_placenta_df)[prot_pla_rel.ako_mvr$ako.s]
+
+table(unlist(prot_pla_rel.ako_mvr$s))
+```
+
+## microbiome
+```{r mb plsko}
+mb.group <- as.factor(ifelse(microbiome_data_raw$Preeclampsia[microbiome_data_raw$timepoint==1], "PE", "control"))
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(mb.time1.rm, ncomp =10)$cum.var)
+r_emp <- r_criterion(mb.time1.rm, rmax = 8)
+
+mb.plsko <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(mb.time1.rm, method = "PLSKO.only", threshold.q = 0, r = r_emp)
+                      S <- ko.filter(X = mb.time1.rm, Xk = ko$ko, y = mb.group, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(mb.plsko, "mb_plsko.rds")
+
+mb.plsko <- readRDS("mb_plsko.rds")
+s.mb <- lapply(mb.plsko , function(x){x$S$S})
+s.mb.freq <- as.data.frame(table(unlist(s.mb))) %>% mutate(gene_num = colnames(mb.time1.batrm)[as.numeric(as.character(Var1))])
+s.mb.freq.final <- s.mb.freq %>% filter(Freq>25)
+
+```
+
+```{r microbio ako}
+mb.group <- as.factor(ifelse(microbiome_data_raw$Preeclampsia[microbiome_data_raw$timepoint==1], "PE", "control"))
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+plot(pca(mb.time1.rm, ncomp =10)$cum.var)
+r_emp <- r_criterion(mb.time1.rm, rmax = 10)
+
+mb.ako <- AKO(X = mb.time1.rm, n_bootstraps = 50, ko.method = "PLSKO.only",
+                        y = mb.group,
+                        w.method = "lasso.logistic", threshold.q = 0, r = r_emp)
+saveRDS(mb.ako, "mb_ako.rds")
+
+mb.ako <- readRDS("mb_ako.rds")
+# s.mb.ako.taxa <- assignTaxonomy(colnames(mb.time1.batrm)[mb.ako$ako.s], refFasta = "silva_nr99_v138.1_wSpecies_train_set.fa")
+
+table(unlist(mb.ako$s))
+
+mb.taxa <- readRDS("microbiome_taxa_final.rds")
+s.mb.ako.taxa <- mb.taxa[c(67,38, 83, 1),]
+```
+
+
+# limma and clipper
+
+## transcript
+```{r limma}
+cpm.dge <- DGEList(cpm_elevated_time1, sample = RNA_time1_sample)
+design <- model.matrix(~cpm.dge$samples$SampleGroup)
+
+v <- voom(cpm.dge, design)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,, drop = F]
+
+row.names(limma.sig)
+```
+
+```{r clipper cpm}
+
+library(Clipper)
+cpm.placenta.pe <- cpm.dge$counts[,cpm.dge$samples$SampleGroup=="PE"]
+cpm.placenta.control <- cpm.dge$counts[,cpm.dge$samples$SampleGroup=="Term"]
+
+cpm_clipper.selected <- lapply(1:50, function(x){Clipper(cpm.placenta.pe, cpm.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(cpm_clipper.selected, "cpm_placenta_clipper.rds")
+
+placenta_clipper.freq <- as.data.frame(table(unlist(cpm_clipper.selected)))
+```
+
+```{r wilcoxon cpm}
+wilcox.placenta.cpm <- lapply(1:77, function(gene.i){
+  wilcox.test(cpm.placenta.control[gene.i,], cpm.placenta.pe[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.placenta.cpm))
+which(wilcox.placenta.p.adj<0.05)
+
+rownames(cpm_elevated_time1$counts)[which(wilcox.placenta.p.adj<0.05)]
+
+```
+
+## proteome
+```{r limma protein}
+design <- model.matrix(~proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup)
+
+#v <- voom(cpm.dge, design)
+limma.fit <- lmFit(t(prot_elevated), design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,, drop = F]
+
+row.names(limma.sig)
+```
+
+```{r protein clipper}
+library(Clipper)
+prot.placenta.pe <- t(prot_elevated)[,proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup=="PE"]
+prot.placenta.control <- t(prot_elevated)[,proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup=="Term"]
+
+prot_clipper.selected <- lapply(1:50, function(x){Clipper(prot.placenta.pe, prot.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(prot_clipper.selected, "prot_placenta_clipper.rds")
+
+prot_clipper.selected <- readRDS("prot_placenta_clipper.rds")
+prot_clipper.freq <- as.data.frame(table(unlist(prot_clipper.selected)))
+```
+
+```{r wilcoxon prot}
+wilcox.placenta.prot <- lapply(1:63, function(gene.i){
+  wilcox.test(prot.placenta.pe[gene.i,], prot.placenta.control[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.placenta.prot))
+which(wilcox.placenta.p.adj<0.05)
+
+colnames(prot_elevated)[which(wilcox.placenta.p.adj<0.05)]
+
+```
+
+```{r limma prot release}
+design <- model.matrix(~proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup)
+
+#v <- voom(cpm.dge, design)
+limma.fit <- lmFit(t(prot_placenta_df), design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,, drop = F]
+
+row.names(limma.sig)
+```
+
+```{r protein clipper release}
+library(Clipper)
+prot.placenta.pe <- t(prot_placenta_df)[,proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup=="PE"]
+prot.placenta.control <- t(prot_placenta_df)[,proteome_data_raw[proteome_data_raw$TimePoint=="1st Tri",]$SampleGroup=="Term"]
+
+prot_clipper.selected <- lapply(1:50, function(x){Clipper(prot.placenta.pe, prot.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(prot_clipper.selected, "prot_release_clipper.rds")
+
+prot_clipper.selected <- readRDS("prot_release_clipper.rds")
+prot_clipper.freq <- as.data.frame(table(unlist(prot_clipper.selected)))
+```
+
+```{r wilcoxon prot release}
+wilcox.release.prot <- lapply(1:36, function(gene.i){
+  wilcox.test(prot.placenta.pe[gene.i,], prot.placenta.control[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.release.prot))
+which(wilcox.placenta.p.adj<0.05)
+
+colnames(prot_placenta_df)[which(wilcox.placenta.p.adj<0.05)]
+
+```
+
+## microbio
+```{r limma mb}
+# TMM normalisation
+mb.tmm <- t(microbiome.keep) %>% DGEList(samples = microbiome_data_raw$Preeclampsia) %>% calcNormFactors(method = "TMM")
+class(mb.clr) <- 'matrix' 
+
+# filter time 1 samples
+mb.time1.tmm <- mb.tmm[,microbiome_data_raw$timepoint==1]
+mb.time1.tmm <- mb.time1.tmm$counts[rownames(mb.time1.tmm$counts) %in% colnames(mb.time1.rm),]
+
+mb.tmm.dge <- DGEList(mb.time1.tmm, sample = microbiome_data_raw$Preeclampsia[microbiome_data_raw$timepoint==1])
+
+design <- model.matrix(~mb.tmm.dge$samples$samples)
+
+v <- voom(mb.tmm.dge, design)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,, drop = F]
+
+row.names(limma.sig)
+```
+
+```{r wilcoxon mb}
+mb.time1.rm.pe <- mb.time1.rm[mb.group=="PE",] 
+mb.time1.rm.control <- mb.time1.rm[mb.group =="control",]
+
+wilcox.mb.p <- lapply(1:ncol(mb.time1.rm), function(gene.i){
+  wilcox.test(mb.time1.rm.control[,gene.i], mb.time1.rm.pe[,gene.i])$p.value
+})
+
+wilcox.mb.p.adj <- p.adjust(unlist(wilcox.mb.p))
+which(wilcox.mb.p.adj<0.05)
+
+colnames(mb.time1.batrm)[which(wilcox.mb.p.adj<0.05)]
+```
+```{r clipper mb}
+library(Clipper)
+
+mb_clipper.selected <- lapply(1:50, function(x){Clipper(t(mb.time1.batrm.pe), t(mb.time1.batrm.control), analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+
+mb.freq.clipper <- as.data.frame(table(unlist(mb_clipper.selected)))
+mb.freq.clipper.final<- mb.freq.clipper %>% filter(Freq > 25) %>% mutate(name =colnames(mb.time1.batrm.pe)[as.numeric(as.character(Var1))]) %>% arrange(desc(Freq))
+```
+
+```{r mb tmm plsko}
+
+mb.group <- as.factor(ifelse(microbiome_data_raw$Preeclampsia[microbiome_data_raw$timepoint==1], "PE", "control"))
+mb.tmm.log <- t(microbiome.keep) %>% DGEList(samples = microbiome_data_raw$Preeclampsia) %>% calcNormFactors(method = "TMM", log = T)
+mb.tmm.log.time1 <- mb.tmm.log[,microbiome_data_raw$timepoint==1]
+mb.time1.tmm.log <- mb.tmm.log.time1$counts[rownames(mb.tmm.log.time1$counts) %in% colnames(mb.time1.rm),]
+
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+plot(pca(t(mb.tmm.log.time1$counts), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(mb.tmm.log.time1$counts), rmax = 4)
+
+mb.tmm.ako <- AKO(X = t(mb.tmm.dge$counts), n_bootstraps = 50, ko.method = "PLSKO.only",
+                        y = mb.group,
+                        w.method = "lasso.logistic", threshold.q = 0, r = r_emp)
+saveRDS(mb.tmm.ako, "mb_tmm_ako.rds")
+
+mb.tmm.ako <- readRDS("mb_tmm_ako.rds")
+# s.mb.ako.taxa <- assignTaxonomy(colnames(mb.time1.batrm)[mb.ako$ako.s], refFasta = "silva_nr99_v138.1_wSpecies_train_set.fa")
+
+table(unlist(mb.tmm.ako$s))
+
+mb.taxa <- readRDS("microbiome_taxa_final.rds")
+s.mb.tmm.ako.taxa <- mb.taxa[mb.tmm.ako$ako.s,]
+s.mb.tmm.ako.taxa <- mb.taxa[c(1,2),]
+
+```
+

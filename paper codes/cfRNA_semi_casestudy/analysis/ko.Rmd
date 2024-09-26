@@ -1,0 +1,1783 @@
+---
+title: "Stanford real data"
+output: html_document
+date: "2024-02-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dpi = 100, 
+                      echo=F, 
+                      warning=F, message=F, eval = TRUE,
+                      fig.show=TRUE, fig.width= 5,fig.height= 5, out.width = '50%', fig.ncol = 1, fig.path= 'Figures/')
+
+
+library(edgeR)
+library(limma)
+library(tidyverse)
+library(mixOmics)
+library(knockoff)
+require(glmnet)
+require(graphics)
+library(reshape2)
+library(rARPACK)
+library(doParallel)
+
+source.path <- "./plsko_writing/paper codes/RSources/"
+setwd("./plsko_writing/paper codes/cfRNA_semi_casestudy/analysis")
+
+
+source(paste0(source.path, "data_sim1.R"))
+source(paste0(source.path, "plsko_plsonly.R"))
+source(paste0(source.path, 'KO_perf.R'))
+source(paste0(source.path, 'KOBT/create.pc.knockoff.R'))
+source(paste0(source.path, 'hdko.R'))
+source(paste0(source.path, 'mvr_julia.R'))
+source(paste0(source.path, 'ako_run.R'))
+source(paste0(source.path, 'ako_with_ko_run.R'))
+
+julia <- julia_setup()
+
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+```
+
+
+```{r loading data}
+############## loading data ###############
+discovery <- read.csv("data/GSE192902_counts_Discovery_postQC.csv/GSE192902_counts_Discovery_postQC.csv",
+                      check.names = F)
+valid1 <- read.csv("data/GSE192902_counts_Validation1_postQC.csv/GSE192902_counts_Validation1_postQC.csv",
+                   check.names = F)
+valid2 <- read.csv(source.path, "data/GSE192902_counts_Validation2_postQC.csv/GSE192902_counts_Validation2_postQC.csv",
+                   check.names = F)
+
+
+rownames(discovery) <- discovery$gene_num
+rownames(valid1) <- valid1$gene_num
+rownames(valid2) <- valid2$gene_num
+
+library(GEOquery)
+#series.info <- getGEO(filename = pasteo(source.path, "GSE192902_series_matrix.txt/GSE192902_series_matrix.txt")
+
+#sample.info <- series.info@phenoData@data
+#saveRDS(sample.info, "data/GSE192902_series_matrix.txt/sample_info.rds")
+
+sample.info <- readRDS("data/GSE192902_series_matrix.txt/sample_info.rds")
+
+col.dup <- apply(sample.info, 2, function(x){
+  all(duplicated(x)[-1])
+})
+sample.info <- sample.info[,!col.dup]
+sample.info$patientID <- stringr::str_sub(sample.info$title, 1,6)
+
+group.for.edg <- sample.info %>% dplyr::select(title, disease = `disease:ch1`, cohort = `cohort:ch1`, time = `sampling time group:ch1`, patientID)
+rownames(group.for.edg) <- group.for.edg$title
+```
+
+# Using Discovery and Validation 1 only
+```{r preprocess}
+
+group.disc.v1 <- group.for.edg %>% filter(cohort == 'Discovery' | cohort == 'Validation 1') %>% arrange(title)
+discv1_counts <- discovery[,-c(1,2)] %>% cbind(valid1[,-c(1,2)]) %>% dplyr::select(group.disc.v1$title)
+
+# TMM normalisation to cpm
+discv1.dge <- discv1_counts %>% DGEList(samples = group.disc.v1) %>% calcNormFactors() 
+discv1.norm <- discv1.dge 
+discv1.norm$counts <- discv1.norm %>% cpm(log = T)
+
+# select sampling time earlier than 12 week
+time1 <- group.disc.v1 %>% filter(time == '≤12 weeks gestation')
+# check and remove duplicated individual
+time1 <- time1[!duplicated(time1$patientID),]
+
+discv1 <- discv1.norm
+discv1$counts <- discv1$counts[,colnames(discv1$counts) %in% time1$title]
+discv1$samples <- discv1$samples[discv1$samples$title %in% time1$title,]
+```
+
+## semi sim function
+```{r ko experiment function}
+#data: n x p dataframe
+#p_x: number of var in X
+#p_s: number of sig in X
+#n_ko: how many knockoff run for this X and y
+
+real_sim <- function(data, p_x, p_s, y.noise = 0, A = c(3,5), y.dis = "Normal", 
+                     plsko.ncomp = 5, plsko.threshold.q = 0.9, rmax = 10,
+                     ko.diagnosis = F, q = 0.05,
+                     seed = Sys.time(), call.var = "seed"){
+  set.seed(seed)
+  X <- data[,sample(1:ncol(data), size = p_x, replace = F)]
+  colnames(X) <- as.character(1:p_x)
+  rownames(X) <- as.character(1:nrow(X))
+  X <- scale(X)
+  Gy <- DGPy.AR1(X = X, s = p_s, c = y.noise, y.dis = y.dis, A = A)
+  y <- Gy$y
+  
+  #rank
+  r_emp <- r_criterion(X, rmax = rmax)
+  r_emp = max(plsko.ncomp+1, r_emp) # make sure r!=0}
+  
+  # generate KO
+  seq.ko <- knockoffX.sim(X, method = "seqknockoffs", ko.diagnosis = ko.diagnosis)
+  pca.ko.orig <- knockoffX.sim(X, method = "PCKO", ko.diagnosis = ko.diagnosis, r = r_emp, threshold.q = 0)
+  #pca.ko.orig.full <- knockoffX.sim(X, method = "PCKO", ko.diagnosis = ko.diagnosis, r = r_emp, threshold.q = 0)
+  plsko.plsonly <- knockoffX.sim(X, method = "PLSKO.only", threshold.q = plsko.threshold.q, ko.diagnosis = ko.diagnosis, r = plsko.ncomp)
+  
+  plsko.plsonly.full <- knockoffX.sim(X, method = "PLSKO.only", threshold.q = 0, r = r_emp, ko.diagnosis = ko.diagnosis)
+  plsko.plsonly.full.sparse <- knockoffX.sim(X, method = "PLSKO.only", threshold.abs = 0, r = r_emp, sparsity = 1-plsko.threshold.q, ko.diagnosis = ko.diagnosis)
+
+  ipad.ko <- knockoffX.sim(X, method = "ipad.pca.center", r = r_emp, ko.diagnosis = ko.diagnosis)
+  
+  Xk <- list(seqko = seq.ko$ko,
+             pcko.orig = pca.ko.orig$ko,
+             #pcko.orig.full = pca.ko.orig.full$ko,
+             IPAD = ipad.ko$ko,
+             plsonly = plsko.plsonly$ko,
+             plsonly.full = plsko.plsonly.full$ko,
+             plsonly.full.sparse = plsko.plsonly.full.sparse$ko
+  )
+  knockx_set <- names(Xk)
+  
+
+  run.time <- list(seqko = seq.ko$run.time,
+                   pcko.orig = pca.ko.orig$run.time,
+                   #pcko.orig.full = pca.ko.orig.full$run.time,
+                   IPAD = ipad.ko$run.time,
+                   plsonly = plsko.plsonly$run.time,
+                   plsonly.full = plsko.plsonly.full$run.time,
+                   plsonly.full.sparse = plsko.plsonly.full.sparse$run.time
+  )
+  
+    #diagnosis
+    if(ko.diagnosis){
+    diagnosis <- list(seqko = seq.ko$diagnosis,
+                      pcko.orig = pca.ko.orig$diagnosis,
+                      #pcko.orig.full = pca.ko.orig.full$diagnosis,
+                      IPAD = ipad.ko$diagnosis,
+                      plsonly = plsko.plsonly$diagnosis,
+                      plsonly.full = plsko.plsonly.full$diagnosis,
+                      plsonly.full.sparse = plsko.plsonly.full.sparse$ko
+    )
+    diagnosis.df <- do.call("rbind", diagnosis)    
+  }
+  
+  S <- lapply(Xk, function(ko){
+    selected <- ko.filter(X = X, Xk = ko, y = y, q = q, method = "lasso.lcd")
+  })
+  
+  fdr <- lapply(S, function(s){fdr = fdr(s$S, Gy$Beta)})
+  names(fdr) <- names(Xk)
+  fdr.plus <- lapply(S, function(s){fdr.plus = fdr(s$S.plus, Gy$Beta)})
+  names(fdr.plus) <- names(Xk)  
+  
+  power <- lapply(S, function(s){pow = pow(s$S, Gy$Beta)})
+  names(power) <- names(Xk)
+  power.plus <- lapply(S, function(s){pow = pow(s$S.plus, Gy$Beta)})
+  names(power.plus) <- names(Xk)
+  
+  
+  # call.var
+  call <- mget(call.var)
+  
+  # if(!any(is.na(true.cov))){
+  #   result <- data.frame(ko.method = c(knockx_set, "oracle"),
+  #                        X.method = X.method,
+  #                        var = unlist(call),
+  #                        fdp = unlist(fdr),
+  #                        tpp = unlist(power),
+  #                        fdp.plus = unlist(fdr.plus),
+  #                        tpp.plus = unlist(power.plus),
+  #                        run.time = unlist(run.time))
+  # }
+  # else{
+    result <- data.frame(ko.method = knockx_set,
+                         r_emp = r_emp,
+                         var = unlist(call),
+                         fdp = unlist(fdr),
+                         tpp = unlist(power),
+                         fdp.plus = unlist(fdr.plus),
+                         tpp.plus = unlist(power.plus),
+                         run.time = unlist(run.time))
+  #}
+  
+  if(ko.diagnosis){
+    result <- cbind(result, diagnosis.df)
+  }
+  
+  return(result)
+}
+
+
+```
+
+```{r test, eval=FALSE}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+r_emp_X <- r_criterion(t(discv1$counts), rmax = 10)
+
+
+# p_x = 100, 150, 200, p_s = 25
+it = 50
+test <- foreach(i = rep(1:it,3), px = rep(seq(100, 200, 50), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             res <- real_sim(t(discv1$counts), p_x = px, p_s = 25, ko.diagnosis = F, seed = i, call.var = "p_x", plsko.ncomp = 3, plsko.threshold.q = 0.8)
+                           }
+test_df <- do.call("rbind",  test )
+saveRDS(test_df, "./test.rds")
+
+```
+
+## colour shceme
+```{r colour}
+library(RColorBrewer)
+
+ko.methods = c("oracle", "JS", "maxent_approx", "maxent_JS", "maxent_oracle", "mvr_JS", "mvr_oracle", 
+               "pcko.orig", "seqko","PC","pca.ko.orig.full",
+               "plsonly.full", "plsonly.full.sparse","PLSKO", "IPAD")
+               #, "Permuted", "BH")
+
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+set.seed(7)
+colour <- sample(col_vector, 17)
+pie(rep(1,17), col=colour)
+method.colour <- colour[c(4:7, 9:11, 8, 15:17, 12:14, 3, 1,2)]
+pie(rep(1,17), col=method.colour)
+names(method.colour) <- ko.methods[1:15]
+
+sec_order.method <- c("oracle", "JS", "maxent_approx", "maxent_JS", "maxent_oracle", "mvr_JS", "mvr_oracle", "PLSKO")
+sec_ord.colour <- method.colour[sec_order.method]
+scip.method <- c( "seqko","PC", "pcko.orig", "pca.ko.orig.full")
+scip.colour <- method.colour[scip.method]
+plsko.variant <- c("plsonly.full", "plsonly.full.sparse","PLSKO","IPAD")
+plsko.colour <- method.colour[plsko.variant]
+
+no_sec_order.method <- c(scip.method, plsko.variant)
+no_sec_order.method <- no_sec_order.method[no_sec_order.method!="pcko.orig"]
+no_sec_ord.colour <- method.colour[no_sec_order.method]
+
+scip_fullnames <- c("IPAD", "PCKO", "PLSKO", "PLSKO-full", "PLSKO-full-sparse", "seqko")
+mvr_fullnames <- c("SDP-JS", "MAXENT-block", "MAXENT-JS", "MVR-JS")
+```
+
+
+```{r plot}
+library(tidyverse)
+library(ggpubr)
+library(viridis)
+library(scales)
+library(mixOmics)
+test_df <- readRDS("./test.rds")
+
+test_df$P <- as.factor(test_df$var)
+test_df$ko.method[test_df$ko.method == "plsonly"] <- "PLSKO"
+test_df$ko.method <- factor(test_df$ko.method)
+
+col_scip <- method.colour[levels(test_df$ko.method)]
+
+test_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+
+test_p_fdr.plot
+
+test_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test_p_pow.plot
+
+# plus 
+test_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = col_scip)+
+  scale_color_manual(values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+test_p_fdr_plus.plot
+
+test_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test_p_pow_plus.plot
+
+# run time
+test_p_time.plot <- ggplot(mapping = aes(x = P, y = run.time), data = test_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = scip_fullnames, values = col_scip)+
+  scale_color_manual(labels = scip_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("Run time (seconds)")
+test_p_time.plot
+
+test_scip <- ggarrange(test_p_fdr.plot, test_p_pow.plot, 
+                       ncol = 2, nrow = 1, common.legend = T)
+```
+
+## mvr function
+```{r mvr experiment}
+real_mvr <- function(data, p_x, p_s, y.noise = 0, A = c(3,5), y.dis = "Normal", 
+                     plsko.ncomp = 5, plsko.threshold.q = 0.9, rmax = 10,
+                     ko.diagnosis = F, q = 0.05,
+                     seed = Sys.time(), call.var = "seed"){
+  
+  set.seed(seed)
+  
+  X <- data[,sample(1:ncol(data), size = p_x, replace = F)]
+  colnames(X) <- as.character(1:p_x)
+  rownames(X) <- as.character(1:nrow(X))
+  X <- scale(X)
+  Gy <- DGPy.AR1(X = X, s = p_s, c = y.noise, y.dis = y.dis, A = A)
+  y <- Gy$y
+  
+  
+  #knockoff construct
+  mu = colMeans(X)
+  sdp_JS <- knockoffX.sim(X, method = "JS")
+  mvr_JS <- generate_ko_with_julia(X, Sigma = NULL, mu, method = "mvr", m = 1)
+  maxent_JS <- generate_ko_with_julia(X, Sigma = NULL, mu, method = "maxent", m = 1)
+  maxent_approx <- generate_ko_with_julia(X, Sigma = NULL, mu, method ="approx", m = 1, windowsize = round(0.1*ncol(X)))
+  
+  Xk <- list(sdp_JS = sdp_JS$ko,
+             mvr_JS = mvr_JS$Xko,
+             maxent_JS = maxent_JS$Xko,
+             maxent_approx = maxent_approx$Xko)
+  
+  knockx.set <- names(Xk)
+  
+  run.time <- list(sdp_JS = sdp_JS$run.time,
+             mvr_JS = mvr_JS$run.time,
+             maxent_JS = maxent_JS$run.time,
+             maxent_approx = maxent_approx$run.time)
+  
+  # var selection
+  S <- lapply(Xk, function(ko){
+    selected <- ko.filter(X = X, Xk = ko, y = y, q = q, method =  "lasso.lcd")
+  })
+  
+  # measurement
+  fdr <- lapply(S, function(s){fdr = fdr(s$S, Gy$Beta)})
+  names(fdr) <- names(Xk)
+  fdr.plus <- lapply(S, function(s){fdr.plus = fdr(s$S.plus, Gy$Beta)})
+  names(fdr.plus) <- names(Xk)  
+  
+  power <- lapply(S, function(s){pow = pow(s$S, Gy$Beta)})
+  names(power) <- names(Xk)
+  power.plus <- lapply(S, function(s){pow = pow(s$S.plus, Gy$Beta)})
+  names(power.plus) <- names(Xk)
+  
+  
+  # call.var
+  call <- mget(call.var)
+  call <- paste(unlist(call), collapse = ",")
+  
+  result <- data.frame(ko.method = knockx.set,
+                       var = unlist(call),
+                       fdp = unlist(fdr),
+                       tpp = unlist(power),
+                       fdp.plus = unlist(fdr.plus),
+                       tpp.plus = unlist(power.plus),
+                       run.time = unlist(run.time))
+  
+  return(result)
+}
+
+```
+
+```{r mvr test, eval=FALSE}
+
+it = 50
+test.mvr <- foreach(i = rep(1:it,3), px = rep(seq(100, 200, 50), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr(t(discv1$counts), p_x = px, p_s = 25, ko.diagnosis = F, seed = i, call.var = "p_x")
+                           }
+real_all_mvr_df <- do.call("rbind",  test.mvr )
+saveRDS(real_all_mvr_df, "./real_all_mvr.rds")
+```
+
+```{r mvr plot}
+real_all_mvr_df <- readRDS("./test_mvr.rds")
+real_all_mvr_df$P <- as.factor(real_all_mvr_df$var)
+real_all_mvr_df$ko.method[real_all_mvr_df$ko.method=="sdp_JS"] <- "JS"
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+col_scip <- method.colour[levels(real_all_mvr_df$ko.method)]
+
+test.mvr_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames,values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_fdr.plot
+
+test.mvr_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+
+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr_p_pow.plot
+
+# plus 
+test.mvr_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+test.mvr_p_fdr_plus.plot
+
+test.mvr_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(labels = scip_fullnames, fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(labels = scip_fullnames, group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_pow_plus.plot
+
+
+# run time
+test.mvr_p_time.plot <- ggplot(mapping = aes(x = P, y = run.time), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(labels = mvr_fullnames, values = col_scip)+
+  scale_color_manual(labels = mvr_fullnames, values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr_p_time.plot
+
+test_mvr <- ggarrange(test.mvr_p_fdr.plot, test.mvr_p_pow.plot, 
+                       ncol = 2, nrow = 1, common.legend = T)
+
+cfRNA.run.time <- ggarrange(test_p_time.plot, test.mvr_p_time.plot,
+                            ncol = 2, nrow = 1, legend = F)
+ggarrange(test_scip, test_mvr, cfRNA.run.time,
+          ncol = 1, nrow = 3, common.legend = T)
+
+
+```
+
+# add validation 2 and apply batch removal
+```{r val2 preprocess}
+group.v2 <- group.for.edg %>% filter(cohort == 'Validation 2') %>% arrange(title)
+v2_counts <- valid2[,-c(1,2)] %>% dplyr::select(group.v2$title)
+
+# TMM normalisation to cpm
+v2.dge <- v2_counts %>% DGEList(samples = group.v2) %>% calcNormFactors() 
+v2.norm <- v2.dge 
+v2.norm$counts <- v2.norm %>% cpm(log = T)
+
+# remove batch effect
+all_count <- cbind(discv1.norm$count, v2.norm$counts)
+batch = c(rep(1, ncol(discv1.norm$counts)), rep(2, ncol(v2.norm$counts)))
+all_integ_count <- limma::removeBatchEffect(all_count, batch = batch)
+
+plotIndiv(pca(t(all_count)), group = batch)
+plotIndiv(pca(t(all_integ_count)), group = batch)
+
+
+# select sampling time earlier than 12 week
+time1.all <- group.for.edg %>% arrange(title) %>% filter(time == '≤12 weeks gestation')
+# check and remove duplicated individual
+time1.all <- time1.all[!duplicated(time1.all$patientID),]
+
+all_integ_t1 <- all_integ_count[,colnames(all_integ_count) %in% time1.all$title]
+
+```
+
+
+```{r scip sim integrated, eval=F}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+it = 50
+real_all <- foreach(i = rep(1:it,6), px = rep(seq(100, 350, 50), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             res <- real_sim(t(all_integ_t1), p_x = px, p_s = 30, ko.diagnosis = F, seed = i, call.var = "p_x", plsko.ncomp = 3, plsko.threshold.q = 0.8)
+                           }
+real_all_df <- do.call("rbind",  real_all )
+saveRDS(real_all_df, "./real_all.rds")
+
+```
+
+```{r mvr sim integrated, eval=F}
+real_all_mvr <- foreach(i = rep(1:it,6), px = rep(seq(100, 350, 50), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr(t(all_integ_t1), p_x = px, p_s = 30, ko.diagnosis = F, seed = i, call.var = "p_x")
+                           }
+real_all_mvr_df <- do.call("rbind",  real_all_mvr )
+saveRDS(real_all_mvr_df, "./real_all_mvr.rds")
+```
+
+```{r all plot}
+real_all_df <- readRDS("./real_all.rds")
+real_all_df$p_var <- as.factor(real_all_df$var)
+real_all_df$ko.method <- factor(real_all_df$ko.method)
+
+real_all_p_fdr.plot <- ggplot(mapping = aes(x = p_var, y = fdp), data = real_all_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+real_all_p_fdr.plot
+
+real_all_p_pow.plot <- ggplot(mapping = aes(x = p_var, y = tpp), data = real_all_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+real_all_p_pow.plot
+
+# plus 
+real_all_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+real_all_p_fdr_plus.plot
+
+real_all_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+real_all_p_pow_plus.plot
+
+# run time
+real_all_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+real_all_p_time.plot
+
+```
+
+```{r all mvr plot}
+real_all_mvr_df <- readRDS("./real_all_mvr.rds")
+real_all_mvr_df$p_var <- as.factor(real_all_mvr_df$var)
+real_all_mvr_df$ko.method <- factor(real_all_mvr_df$ko.method)
+
+real_all_mvr_fdr.plot <- ggplot(mapping = aes(x = p_var, y = fdp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+real_all_mvr_fdr.plot
+
+real_all_mvr_pow.plot <- ggplot(mapping = aes(x = p_var, y = tpp), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+real_all_mvr_pow.plot
+
+# plus 
+real_all_mvr_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+real_all_mvr_fdr_plus.plot
+
+real_all_mvr_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+real_all_mvr_pow_plus.plot
+
+# run time
+real_all_mvr_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_mvr_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+real_all_mvr_time.plot
+```
+
+## mvr after normalised 
+```{r mvr experiment}
+real_mvr_norm <- function(data, p_x, p_s, y.noise = 0, A = c(3,5), y.dis = "Normal", 
+                     plsko.ncomp = 5, plsko.threshold.q = 0.9, rmax = 10,
+                     ko.diagnosis = F, q = 0.05,
+                     seed = Sys.time(), call.var = "seed"){
+  
+  set.seed(seed)
+  
+  X <- data[,sample(1:ncol(data), size = p_x, replace = F)]
+  colnames(X) <- as.character(1:p_x)
+  rownames(X) <- as.character(1:nrow(X))
+  X <- scale(X)
+  X <- apply(X, 2, function(x){
+    X.rank <- rank(x)/(length(x)+1)
+    X.norm <- qnorm(X.rank, mean = 0, sd = 1)
+  })
+  Gy <- DGPy.AR1(X = X, s = p_s, c = y.noise, y.dis = y.dis, A = A)
+  y <- Gy$y
+  
+  
+  #knockoff construct
+  mu = colMeans(X)
+  sdp_JS <- knockoffX.sim(X, method = "JS")
+  mvr_JS <- generate_ko_with_julia(X, Sigma = NULL, mu, method = "mvr", m = 1)
+  maxent_JS <- generate_ko_with_julia(X, Sigma = NULL, mu, method = "maxent", m = 1)
+  maxent_approx <- generate_ko_with_julia(X, Sigma = NULL, mu, method ="approx", m = 1, windowsize = round(0.1*ncol(X)))
+  
+  Xk <- list(sdp_JS = sdp_JS$ko,
+             mvr_JS = mvr_JS$Xko,
+             maxent_JS = maxent_JS$Xko,
+             maxent_approx = maxent_approx$Xko)
+  
+  knockx.set <- names(Xk)
+  
+  run.time <- list(sdp_JS = sdp_JS$run.time,
+             mvr_JS = mvr_JS$run.time,
+             maxent_JS = maxent_JS$run.time,
+             maxent_approx = maxent_approx$run.time)
+  
+  # var selection
+  S <- lapply(Xk, function(ko){
+    selected <- ko.filter(X = X, Xk = ko, y = y, q = q, method =  "lasso.lcd")
+  })
+  
+  # measurement
+  fdr <- lapply(S, function(s){fdr = fdr(s$S, Gy$Beta)})
+  names(fdr) <- names(Xk)
+  fdr.plus <- lapply(S, function(s){fdr.plus = fdr(s$S.plus, Gy$Beta)})
+  names(fdr.plus) <- names(Xk)  
+  
+  power <- lapply(S, function(s){pow = pow(s$S, Gy$Beta)})
+  names(power) <- names(Xk)
+  power.plus <- lapply(S, function(s){pow = pow(s$S.plus, Gy$Beta)})
+  names(power.plus) <- names(Xk)
+  
+  
+  # call.var
+  call <- mget(call.var)
+  call <- paste(unlist(call), collapse = ",")
+  
+  result <- data.frame(ko.method = knockx.set,
+                       var = unlist(call),
+                       fdp = unlist(fdr),
+                       tpp = unlist(power),
+                       fdp.plus = unlist(fdr.plus),
+                       tpp.plus = unlist(power.plus),
+                       run.time = unlist(run.time))
+  
+  return(result)
+}
+
+```
+
+```{r mvr test, eval=FALSE}
+
+it = 50
+test.mvr.norm <- foreach(i = rep(1:it,3), px = rep(seq(100, 200, 50), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr_norm(t(discv1$counts), p_x = px, p_s = 25, ko.diagnosis = F, seed = i, call.var = "p_x")
+                           }
+real_mvr.norm_df <- do.call("rbind",  test.mvr.norm )
+saveRDS(real_mvr.norm_df, "./real_mvr_norm.rds")
+```
+
+```{r mvr plot}
+real_all_mvr.norm_df <- readRDS("./real_mvr_norm.rds") # discv1 only
+real_all_mvr.norm_df$p_var <- as.factor(real_all_mvr.norm_df$var)
+real_all_mvr.norm_df$P <- real_all_mvr.norm_df$p_var
+real_all_mvr.norm_df$ko.method[real_all_mvr.norm_df$ko.method=="sdp_JS"] <- "JS"
+real_all_mvr.norm_df$ko.method <- factor(real_all_mvr.norm_df$ko.method)
+col_scip <- method.colour[levels(real_all_mvr.norm_df$ko.method)]
+
+test.mvr.norm_p_fdr.plot <- ggplot(mapping = aes(x = P, y = fdp), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = col_scip)+
+  scale_color_manual(values = col_scip)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+  ylab("FDP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr.norm_p_fdr.plot
+
+test.mvr.norm_p_pow.plot <- ggplot(mapping = aes(x = P, y = tpp), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = col_scip)+
+  scale_color_manual(values = col_scip)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")+  ylab("TPP") + guides(fill=guide_legend(title="Knockoff Generator"), color=guide_legend(title="Knockoff Generator"))
+test.mvr.norm_p_pow.plot
+
+ggarrange(test.mvr.norm_p_fdr.plot, test.mvr.norm_p_pow.plot, ncol = 2, nrow =1, common.legend = T)
+# plus 
+test.mvr.norm_p_fdr_plus.plot <- ggplot(mapping = aes(x = p_var, y = fdp.plus), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line") +
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")
+test.mvr.norm_p_fdr_plus.plot
+
+test.mvr.norm_p_pow_plus.plot <- ggplot(mapping = aes(x = p_var, y = tpp.plus), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr.norm_p_pow_plus.plot
+
+# run time
+test.mvr.norm_p_time.plot <- ggplot(mapping = aes(x = p_var, y = run.time), data = real_all_mvr.norm_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  # scale_fill_manual(values = bench.col)+
+  # scale_color_manual(values = bench.col)+
+  stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line") +
+  theme(legend.position = "top")
+test.mvr.norm_p_time.plot
+```
+
+```{r mvr sim integrated, eval=F}
+real_all_mvr.norm <- foreach(i = rep(1:it,6), px = rep(seq(100, 350, 50), each = it), 
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab","JuliaCall")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             julia_library("Knockoffs")
+                             res <- real_mvr_norm(t(all_integ_t1), p_x = px, p_s = 30, ko.diagnosis = F, seed = i, call.var = "p_x")
+                           }
+real_all_mvr.norm_df <- do.call("rbind",  real_all_mvr.norm )
+saveRDS(real_all_mvr.norm_df, "./real_all_mvr_norm.rds")
+```
+
+# real X and y (disc and v1)
+## real and semi top variable 200
+I'm not sure under how large dimension knockoff can handle. So I just start with p = 200
+```{r screen 200}
+most.variable <- discv1$counts[rank(apply(discv1$counts, 1, sd))>(nrow(discv1$counts)-200),]
+
+discv1.filter <- discv1
+discv1.filter$counts <- most.variable
+
+discv1.filter$samples$PE <- ifelse(discv1.filter$samples$disease=="control", yes = "control", no="PE")
+discv1.filter$samples$PE <- as.factor(discv1.filter$samples$PE)
+  
+```
+
+test on PLSKO only
+```{r ko construction}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(t(discv1.filter$counts), ncomp = 10)$cum.var)
+r_emp <- r_criterion(t(discv1.filter$counts), rmax = 6)
+
+discv1.plsko <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1.filter$counts), method = "PLSKO.only", threshold.q = 0, r = r_emp)
+                      S <- ko.filter(X = t(discv1.filter$counts), Xk = ko$ko, y = discv1.filter$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(discv1.plsko, "discv1_plsko_200.rds")
+
+discv1_plsko_200 <- readRDS("discv1_plsko_200.rds")
+s200 <- lapply(discv1_plsko_200 , function(x){x$S$S})
+table(unlist(s200))
+
+rownames(discv1.filter$counts)[c(52,172, 187, 165)]
+
+```
+## semi 200
+```{r semi 200}
+
+discv1_plsko_200 <- readRDS("discv1_plsko_200.rds")
+discv1_plsko_200_ko <- lapply(discv1_plsko_200, function(x){
+  x$ko$ko
+})
+
+semi_discv1_plsko_200_ko_bin <- foreach(i = rep(1:50, 2), p_s = rep(c(25, 50), each = 50),  .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar% {
+  source(paste0(source.path, "data_sim1.R"))
+  res <- semi_sim_withko(t(discv1.filter$counts), discv1_plsko_200_ko, p_s = p_s, seed = i, y.dis = "Binary", w.method = "lasso.logistic")
+}
+saveRDS(semi_discv1_plsko_200_ko_bin, "semi_discv1_plsko_200_ko_bin.rds")
+beep(8)
+
+semi_discv1_plsko_200_ko_bin <- readRDS("semi_discv1_plsko_200_ko_bin.rds")
+semi_discv1_plsko_200_ko_bin_25 <- do.call("rbind", lapply(semi_discv1_plsko_200_ko_bin[1:50], function(x){x$result}))
+semi_discv1_plsko_200_ko_bin_50 <- do.call("rbind", lapply(semi_discv1_plsko_200_ko_bin[51:100], function(x){x$result}))
+
+mean(semi_discv1_plsko_200_ko_bin_25$fdp)
+mean(semi_discv1_plsko_200_ko_bin_50$fdp)
+semi_discv1_plsko_200_ko_bin_25_length <- lapply(semi_discv1_plsko_200_ko_bin[1:50], function(x){lapply(x$S, function(y){length(y$S)})})
+hist(semi_discv1_plsko_200_ko_bin_25$fdp[semi_discv1_plsko_200_ko_bin_25$tpp!=0], breaks = 20)
+hist(semi_discv1_plsko_200_ko_bin_50$fdp[semi_discv1_plsko_200_ko_bin_50$tpp!=0], breaks = 20)
+
+```
+
+Still, most of selected vars are false positive.
+One of the reason can be higher correlation among the variables with the highest variance. e.g.
+```{r}
+hist(unlist(cor(t(discv1.filter$counts))), breaks = 100) #17.8% higher than 0.5 correlation
+hist(unlist(cor(t(disc.filter$counts))), breaks = 100) #3% higher than 0.5 correlation
+```
+
+
+### semi 200 lasso lcd
+```{r semi 200}
+semi_discv1_plsko_200_ko <- foreach(i = rep(1:50, 2), p_s = rep(c(25, 50), each = 50),  .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar% {
+  source(paste0(source.path, "data_sim1.R"))
+  res <- semi_sim_withko(t(discv1.filter$counts), discv1_plsko_200_ko, p_s = p_s, seed = i, y.dis = "Normal", w.method = "lasso.lcd")
+}
+saveRDS(semi_discv1_plsko_200_ko, "semi_discv1_plsko_200_ko.rds")
+#beep(8)
+
+semi_discv1_plsko_200_ko <- readRDS("semi_discv1_plsko_200_ko.rds")
+semi_discv1_plsko_200_ko_25 <- do.call("rbind", lapply(semi_discv1_plsko_200_ko[1:50], function(x){x$result}))
+semi_discv1_plsko_200_ko_50 <- do.call("rbind", lapply(semi_discv1_plsko_200_ko[51:100], function(x){x$result}))
+
+mean(semi_discv1_plsko_200_ko_25$fdp)
+mean(semi_discv1_plsko_200_ko_50$fdp)
+semi_discv1_plsko_200_ko_25_length <- lapply(semi_discv1_plsko_200_ko[1:50], function(x){lapply(x$S, function(y){length(y$S)})})
+hist(semi_discv1_plsko_200_ko_25$fdp[semi_discv1_plsko_200_ko_25$tpp!=0], breaks = 20)
+hist(semi_discv1_plsko_200_ko_50$fdp[semi_discv1_plsko_200_ko_50$tpp!=0], breaks = 20)
+```
+
+
+```{r semi 200 ako}
+semi_discv1_plsko_ako <- AKO.wko(t(discv1.filter$counts), 
+                                 y = t(discv1.filter$counts) %*% semi_discv1_plsko_200_ko[[1]]$beta, 
+                                 Xko.list = discv1_plsko_200_ko)
+saveRDS(semi_discv1_plsko_ako, "semi_discv1_plsko_ako.rds")
+
+semi_discv1_plsko_ako$ako.s
+fdr(semi_discv1_plsko_ako$ako.s, semi_discv1_plsko_200_ko[[1]]$beta!=0)
+pow(semi_discv1_plsko_ako$ako.s, semi_discv1_plsko_200_ko[[1]]$beta!=0)
+
+semi_discv1_plsko_ako_35 <- AKO.wko(t(discv1.filter$counts), 
+                                 y = t(discv1.filter$counts) %*% semi_discv1_plsko_200_ko[[35]]$beta, 
+                                 Xko.list = discv1_plsko_200_ko)
+saveRDS(semi_discv1_plsko_ako_35, "semi_discv1_plsko_ako_35.rds")
+
+semi_discv1_plsko_ako_35$ako.s
+fdr(semi_discv1_plsko_ako_35$ako.s, semi_discv1_plsko_200_ko[[35]]$beta!=0)
+pow(semi_discv1_plsko_ako_35$ako.s, semi_discv1_plsko_200_ko[[35]]$beta!=0)
+
+semi_discv1_plsko_ako_36 <- AKO.wko(t(discv1.filter$counts), 
+                                 y = t(discv1.filter$counts) %*% semi_discv1_plsko_200_ko[[36]]$beta, 
+                                 Xko.list = discv1_plsko_200_ko)
+saveRDS(semi_discv1_plsko_ako_36, "semi_discv1_plsko_ako_36.rds")
+
+semi_discv1_plsko_ako_36$ako.s
+fdr(semi_discv1_plsko_ako_36$ako.s, semi_discv1_plsko_200_ko[[36]]$beta!=0)
+pow(semi_discv1_plsko_ako_36$ako.s, semi_discv1_plsko_200_ko[[36]]$beta!=0)
+```
+
+```{r top 200 real y}
+discv1_200_plsko_ako <- AKO.wko(t(discv1.filter$counts), 
+                                 y = discv1.filter$samples$PE, 
+                                 Xko.list = discv1_plsko_200_ko,
+                                w.method = "lasso.logistic")
+saveRDS(discv1_200_plsko_ako, "discv1_200_plsko_ako.rds")
+table(unlist(discv1_200_plsko_ako$s))
+discv1_200_plsko_ako$ako.s
+rownames(discv1.filter$counts[discv1_200_plsko_ako$ako.s,])
+```
+
+```{r limma 200}
+disc.limma.200 <- disc.limma
+disc.limma.200$counts <- disc.limma$counts[rownames(disc.limma$counts) %in% rownames(discv1.filter$counts),]
+ 
+# limma fit
+design <- model.matrix(~disc.limma$samples$PE)
+
+v <- voom(disc.limma.200, design, span = 0.9)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,]
+
+row.names(limma.sig)
+```
+```{r top 200 wilcox}
+discv1.filter.pe <- discv1.filter$counts[, discv1.filter$sample$PE == "PE"]
+discv1.filter.control <- discv1.filter$counts[, discv1.filter$sample$PE == "control"]
+
+wilcox.200 <- lapply(1:nrow(discv1.filter.pe), function(gene.i){
+  wilcox.test(discv1.filter.control[gene.i,], discv1.filter.pe[gene.i,])$p.value
+})
+
+wilcox.200.p.adj <- p.adjust(unlist(wilcox.200))
+which(wilcox.200.p.adj<0.05)
+
+rownames(discv1.filter$counts)[which(wilcox.200.p.adj<0.05)]
+```
+
+
+# Real X and y (placenta elevated and enriched only)- discv1
+
+https://v19.proteinatlas.org/humanproteome/tissue/placenta 
+- 91 enriched, 494 elevated
+```{r real data placenta}
+
+placenta_elevated <- read_tsv("./data/tissue_category_rna_placenta_elevated.tsv")
+
+discv1.placenta.elevated <- discv1
+discv1.placenta.elevated$counts <- discv1$counts[rownames(discv1$counts) %in% placenta_elevated$Ensembl,]
+
+discv1.placenta.elevated$samples$PE <- ifelse(discv1.placenta.elevated$samples$disease=="control", yes = "control", no="PE")
+discv1.placenta.elevated$samples$PE <- as.factor(discv1.placenta.elevated$samples$PE)
+```
+
+```{r placenta plsko}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10))
+
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+discv1.plsko.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1.placenta.elevated$counts), method = "PLSKO.only", threshold.q = 0, r = r_emp)
+                      S <- ko.filter(X = t(discv1.placenta.elevated$counts), Xk = ko$ko, y = discv1.placenta.elevated$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(discv1.plsko.placenta, "discv1_plsko_placneta.rds")
+
+discv1.plsko.placenta <- readRDS("discv1_plsko_placneta.rds")
+s.placenta <- lapply(discv1.plsko.placenta , function(x){x$S$S})
+s.placenta.freq <- as.data.frame(table(unlist(s.placenta))) %>% mutate(gene_num = rownames(discv1.placenta.elevated$counts)[as.numeric(as.character(Var1))])
+s.placenta_final <- s.placenta.freq %>% filter(Freq>25)
+
+```
+
+```{r placenta seqko}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+discv1.seqko.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1.placenta.elevated$counts), method = "seqknockoffs")
+                      S <- ko.filter(X = t(discv1.placenta.elevated$counts), Xk = ko$ko, y = discv1.placenta.elevated$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+saveRDS(discv1.seqko.placenta, "discv1_seqko_placneta.rds")
+
+discv1.seqko.placenta <- readRDS("discv1_seqko_placneta.rds")
+s.placenta.seqko <- lapply(discv1.seqko.placenta , function(x){x$S$S})
+table(unlist(s.placenta.seqko))
+
+s.placenta.freq.seqko  <- as.data.frame(table(unlist(s.placenta.seqko ))) %>% mutate(gene_num = rownames(discv1.placenta.elevated$counts)[as.numeric(Var1)])
+s.placenta_final.seqko <- s.placenta.freq.seqko %>% filter(Freq>25)
+#rownames(discv1.placenta.elevated$counts)[c(24,25,33,11,42)]
+```
+
+```{r placenta mvr}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+discv1.mvr.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", "glmnet","irlba","kernlab", "JuliaCall")) %dopar% {
+                      julia_library("Knockoffs")
+                      ko <- generate_ko_with_julia(t(discv1.placenta.elevated$counts), Sigma = NULL, rowMeans(discv1.placenta.elevated$counts), method = "maxent", m = 1)
+                      S <- ko.filter(X = t(discv1.placenta.elevated$counts), Xk = ko$Xko, y = discv1.placenta.elevated$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(discv1.mvr.placenta, "discv1_mvr_placenta.rds")
+
+discv1.mvr.placenta <- readRDS("discv1_mvr_placenta.rds")
+s_placenta_mvr <- lapply(discv1.mvr.placenta, function(x){x$S$S})
+table(unlist(s_placenta_mvr))
+
+s.placenta.freq.mvr  <- as.data.frame(table(unlist(s_placenta_mvr ))) %>% mutate(gene_num = rownames(discv1.placenta.elevated$counts)[as.numeric(Var1)])
+s.placenta_final.mvr <- s.placenta.freq.mvr %>% filter(Freq>25)
+
+```
+
+```{r plsko ako}
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+s.placenta_ako <- AKO(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, w.method = "lasso.logistic", n_bootstraps = 50, threshold.q = 0, r = r_emp, sparsity = 1, gamma = 0.3)
+saveRDS(s.placenta_ako, "discv1_plsko_placneta_ako.rds")
+```
+
+### limma
+```{r limma placenta}
+
+disc.limma <- DGEList(discv1_counts,samples = group.disc.v1) %>% calcNormFactors(method = "TMM")
+ disc.limma$counts <- disc.limma$counts[,disc.limma$samples$title %in% time1$title]
+ disc.limma$samples <- disc.limma$samples[disc.limma$samples$title %in% time1$title,]
+ disc.limma$samples$PE <- ifelse(disc.limma$samples$disease=="control", yes = "control", no="PE")
+ disc.limma$samples$PE <- as.factor(disc.limma$samples$PE)
+ 
+disc.limma.placenta <- disc.limma
+disc.limma.placenta$counts <- disc.limma$counts[rownames(disc.limma$counts) %in% placenta_elevated$Ensembl,]
+ 
+# limma fit
+design <- model.matrix(~disc.limma$samples$PE)
+
+v <- voom(disc.limma.placenta, design, span = 0.9)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,]
+
+row.names(limma.sig)
+#ENSG00000112773
+```
+### clipper
+```{r clipper 81}
+#discv1.placenta.elevated: DGEList
+library(Clipper)
+discv1.placenta.pe <- discv1.placenta.elevated$counts[,discv1.placenta.elevated$samples$PE=="PE"]
+discv1.placenta.control <- discv1.placenta.elevated$counts[,discv1.placenta.elevated$samples$PE=="control"]
+
+placenta_clipper.selected <- lapply(1:50, function(x){Clipper(discv1.placenta.pe, discv1.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(placenta_clipper.selected, "discv1_placenta_clipper.rds")
+
+placenta_clipper.freq <- as.data.frame(table(unlist(placenta_clipper.selected)))
+#gene_num_clipper <- rownames(discv1.placenta.elevated$counts)[as.numeric(placenta_clipper.freq$Var1[placenta_clipper.freq$Freq>40])]
+
+# ===
+# exchange experiment and control
+placenta_clipper.selected <- lapply(1:50, function(x){Clipper( discv1.placenta.control, discv1.placenta.pe, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(placenta_clipper.selected, "discv1_placenta_clipper.rds")
+
+placenta_clipper.freq <- as.data.frame(table(unlist(placenta_clipper.selected)))
+```
+
+### wilcoxon
+```{r wilcox test 81}
+wilcox.placenta <- lapply(1:81, function(gene.i){
+  wilcox.test(discv1.placenta.pe[gene.i,], discv1.placenta.control[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.placenta))
+which(wilcox.placenta.p.adj<0.05)
+
+rownames(discv1.placenta.elevated$counts)[which(wilcox.placenta.p.adj<0.05)]
+```
+### logistic regression
+```{r logistic placenta}
+set.seed(1)
+lasso.cv <- lapply(1:50, function(x){
+  en.fit <- cv.glmnet(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, family = "binomial", nfolds = 5, parallel = T, keep = T)
+  auc.min <- min(en.fit$cvm)
+  return(list(fit = en.fit, auc.min = auc.min))
+})
+
+final.lambda <- lasso.cv[which.min(lapply(lasso.cv, function(x)x$auc.min))][[1]]$fit$lambda.min
+final.fit <- glmnet(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, family = "binomial", alpha = 1, lambda = final.lambda)
+lasso.selected.placenta <- which(coef(final.fit)!=0)[-1]-1
+saveRDS(lasso.selected.placenta, "lasso_selected.rds")
+gene_num_lasso <- rownames(discv1.placenta.elevated$counts)[lasso.selected.placenta]
+gene_num_lasso
+
+
+# over 50 times
+set.seed(1)
+ selected.lasso.placenta <- lapply(1:50, function(x){
+   coef <- cv_coeffs_glmnet(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, family = "binomial", alpha = 0.5, nfolds = 5, parallel = T, keep = T)
+  selected <- which(coef!=0)-1
+  selected <- selected[selected!=0]
+ return(selected)
+ })
+
+ table(unlist(selected.lasso.placenta))
+s.lasso.log.placenta <- cbind(as.data.frame(table(unlist(selected.lasso.placenta))),name =  rownames(discv1.placenta.elevated$counts)[as.numeric(names(table(unlist(selected.lasso.placenta))))],in.KO = names(table(unlist(selected.lasso.placenta)))%in% s.placenta.freq[,1])
+```
+
+```{r logistic without panalty}
+
+# select the most variable 71 genes from the 81
+most.71variable <- discv1.placenta.elevated$counts[rank(apply(discv1.placenta.elevated$counts, 1, sd))>(nrow(discv1.placenta.elevated$counts)-71),]
+
+discv1.placenta71 <- discv1.placenta.elevated
+discv1.placenta71$counts <- most.71variable
+
+log.fit <- glm(discv1.placenta71$samples$PE~scale(t(discv1.placenta71$counts)), family = 'binomial')
+which(summary(log.fit)$coefficients[,4]<0.05)
+```
+
+# HPAv23 Real X and y (placenta elevated and enriched only)- discv1
+https://www.proteinatlas.org/about/download
+RNA consensus tissue gene data: rna_tissue_consensus.tsv.zip
+Consensus transcript expression levels summarized per gene in 50 tissues based on transcriptomics data from HPA and GTEx. The consensus normalized expression ("nTPM") value is calculated as the maximum nTPM value for each gene in the two data sources. For tissues with multiple sub-tissues (brain regions, lymphoid tissues and intestine) the maximum of all sub-tissues is used for the tissue type. The tab-separated file includes Ensembl gene identifier ("Gene"), analysed sample ("Tissue") and normalized expression ("nTPM"). The data is based on The Human Protein Atlas version 23.0 and Ensembl version 109.
+(Downloaded at 20/05/2024)
+```{r real data placenta}
+
+placenta_elevated <- readRDS("./data/placenta_3fold.rds")
+
+discv1.placenta.elevated <- discv1
+discv1.placenta.elevated$counts <- discv1$counts[rownames(discv1$counts) %in% placenta_elevated$Gene,] #96 genes
+
+discv1.placenta.elevated$samples$PE <- ifelse(discv1.placenta.elevated$samples$disease=="control", yes = "control", no="PE")
+discv1.placenta.elevated$samples$PE <- as.factor(discv1.placenta.elevated$samples$PE)
+```
+
+```{r placenta plsko}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10))
+
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+discv1.plsko.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1.placenta.elevated$counts), method = "PLSKO.only", threshold.q = 0, r = r_emp)
+                      S <- ko.filter(X = t(discv1.placenta.elevated$counts), Xk = ko$ko, y = discv1.placenta.elevated$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(discv1.plsko.placenta, "discv1_plsko_placneta3.rds")
+
+discv1.plsko.placenta3 <- readRDS("discv1_plsko_placneta3.rds")
+s.placenta <- lapply(discv1.plsko.placenta3 , function(x){x$S$S})
+s.placenta.freq <- as.data.frame(table(unlist(s.placenta))) %>% mutate(gene_num = rownames(discv1.placenta.elevated$counts)[as.numeric(as.character(Var1))])
+s.placenta_final <- s.placenta.freq %>% filter(Freq>25)
+
+#ako
+placenta3_ko <- lapply(discv1.plsko.placenta, function(x){
+  x$ko$ko
+})
+
+placenta3.ako <- AKO.wko(X = t(discv1.placenta.elevated$counts), y = discv1.placenta.elevated$samples$PE, Xko.list = placenta3_ko, w.method = "lasso.logistic")
+saveRDS(placenta3.ako, "placenta3_ako.rds")
+placenta3.ako <- readRDS("placenta3_ako.rds")
+colnames(t(discv1.placenta.elevated$counts))[placenta3.ako$ako.s]
+table(unlist(placenta3.ako$s))
+```
+
+```{r placenta seqko}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+discv1.seqko.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1.placenta.elevated$counts), method = "seqknockoffs")
+                      S <- ko.filter(X = t(discv1.placenta.elevated$counts), Xk = ko$ko, y = discv1.placenta.elevated$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+saveRDS(discv1.seqko.placenta, "discv1_seqko_placneta.rds")
+
+discv1.seqko.placenta <- readRDS("discv1_seqko_placneta.rds")
+s.placenta.seqko <- lapply(discv1.seqko.placenta , function(x){x$S$S})
+table(unlist(s.placenta.seqko))
+
+s.placenta.freq.seqko  <- as.data.frame(table(unlist(s.placenta.seqko ))) %>% mutate(gene_num = rownames(discv1.placenta.elevated$counts)[as.numeric(Var1)])
+s.placenta_final.seqko <- s.placenta.freq.seqko %>% filter(Freq>25)
+#rownames(discv1.placenta.elevated$counts)[c(24,25,33,11,42)]
+```
+
+```{r placenta mvr}
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+
+it = 50
+set.seed(1)
+
+discv1.mvr.placenta <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", "glmnet","irlba","kernlab", "JuliaCall")) %dopar% {
+                      julia_library("Knockoffs")
+                      ko <- generate_ko_with_julia(t(discv1.placenta.elevated$counts), Sigma = NULL, rowMeans(discv1.placenta.elevated$counts), method = "maxent", m = 1)
+                      S <- ko.filter(X = t(discv1.placenta.elevated$counts), Xk = ko$Xko, y = discv1.placenta.elevated$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(list(ko = ko, S = S))
+                    }
+
+saveRDS(discv1.mvr.placenta, "discv1_mvr_placenta3.rds")
+
+discv1.mvr.placenta <- readRDS("discv1_mvr_placenta3.rds")
+s_placenta_mvr <- lapply(discv1.mvr.placenta, function(x){x$S$S})
+table(unlist(s_placenta_mvr))
+
+s.placenta.freq.mvr  <- as.data.frame(table(unlist(s_placenta_mvr ))) %>% mutate(gene_num = rownames(discv1.placenta.elevated$counts)[as.numeric(Var1)])
+s.placenta_final.mvr <- s.placenta.freq.mvr %>% filter(Freq>25)
+
+#ako
+placenta3_ko_mvr <- lapply(discv1.mvr.placenta, function(x){
+  x$ko$Xko
+})
+
+placenta3.ako_mvr <- AKO.wko(X = t(discv1.placenta.elevated$counts), y = discv1.placenta.elevated$samples$PE, Xko.list = placenta3_ko_mvr, w.method = "lasso.logistic")
+saveRDS(placenta3.ako_mvr, "placenta3_ako_mvr.rds")
+colnames(t(discv1.placenta.elevated$counts))[placenta3.ako_mvr$ako.s]
+```
+
+
+### limma
+```{r limma placenta}
+
+disc.limma <- DGEList(discv1_counts,samples = group.disc.v1) %>% calcNormFactors(method = "TMM")
+ disc.limma$counts <- disc.limma$counts[,disc.limma$samples$title %in% time1$title]
+ disc.limma$samples <- disc.limma$samples[disc.limma$samples$title %in% time1$title,]
+ disc.limma$samples$PE <- ifelse(disc.limma$samples$disease=="control", yes = "control", no="PE")
+ disc.limma$samples$PE <- as.factor(disc.limma$samples$PE)
+ 
+disc.limma.placenta <- disc.limma
+disc.limma.placenta$counts <- disc.limma$counts[rownames(disc.limma$counts) %in% placenta_elevated$Gene,]
+ 
+# limma fit
+design <- model.matrix(~disc.limma$samples$PE)
+
+v <- voom(disc.limma.placenta, design, span = 0.9)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,]
+
+row.names(limma.sig)
+#ENSG00000112773
+```
+### clipper
+```{r clipper 91}
+#discv1.placenta.elevated: DGEList
+library(Clipper)
+discv1.placenta.pe <- discv1.placenta.elevated$counts[,discv1.placenta.elevated$samples$PE=="PE"]
+discv1.placenta.control <- discv1.placenta.elevated$counts[,discv1.placenta.elevated$samples$PE=="control"]
+
+placenta_clipper.selected <- lapply(1:50, function(x){Clipper(discv1.placenta.pe, discv1.placenta.control, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+saveRDS(placenta_clipper.selected, "discv1_placenta3_clipper.rds")
+
+placenta_clipper.freq <- as.data.frame(table(unlist(placenta_clipper.selected)))
+#gene_num_clipper <- rownames(discv1.placenta.elevated$counts)[as.numeric(placenta_clipper.freq$Var1[placenta_clipper.freq$Freq>40])]
+
+# ===
+# exchange experiment and control
+# placenta_clipper.selected <- lapply(1:50, function(x){Clipper( discv1.placenta.control, discv1.placenta.pe, analysis = "d", procedure = "GZ", n.permutation = 2, seed = x, contrast.score = "diff")$discoveries[[1]]})
+# saveRDS(placenta_clipper.selected, "discv1_placenta_clipper.rds")
+# 
+# placenta_clipper.freq <- as.data.frame(table(unlist(placenta_clipper.selected)))
+```
+
+### wilcoxon
+```{r wilcox test 81}
+wilcox.placenta <- lapply(1:81, function(gene.i){
+  wilcox.test(discv1.placenta.pe[gene.i,], discv1.placenta.control[gene.i,])$p.value
+})
+
+wilcox.placenta.p.adj <- p.adjust(unlist(wilcox.placenta))
+which(wilcox.placenta.p.adj<0.05)
+
+rownames(discv1.placenta.elevated$counts)[which(wilcox.placenta.p.adj<0.05)]
+```
+### logistic regression
+```{r logistic placenta}
+set.seed(1)
+lasso.cv <- lapply(1:50, function(x){
+  en.fit <- cv.glmnet(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, family = "binomial", nfolds = 5, parallel = T, keep = T)
+  auc.min <- min(en.fit$cvm)
+  return(list(fit = en.fit, auc.min = auc.min))
+})
+
+final.lambda <- lasso.cv[which.min(lapply(lasso.cv, function(x)x$auc.min))][[1]]$fit$lambda.min
+final.fit <- glmnet(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, family = "binomial", alpha = 1, lambda = final.lambda)
+lasso.selected.placenta <- which(coef(final.fit)!=0)[-1]-1
+saveRDS(lasso.selected.placenta, "lasso_selected.rds")
+gene_num_lasso <- rownames(discv1.placenta.elevated$counts)[lasso.selected.placenta]
+gene_num_lasso
+
+
+# over 50 times
+set.seed(1)
+ selected.lasso.placenta <- lapply(1:50, function(x){
+   coef <- cv_coeffs_glmnet(t(discv1.placenta.elevated$counts), discv1.placenta.elevated$samples$PE, family = "binomial", alpha = 0.5, nfolds = 5, parallel = T, keep = T)
+  selected <- which(coef!=0)-1
+  selected <- selected[selected!=0]
+ return(selected)
+ })
+
+ table(unlist(selected.lasso.placenta))
+s.lasso.log.placenta <- cbind(as.data.frame(table(unlist(selected.lasso.placenta))),name =  rownames(discv1.placenta.elevated$counts)[as.numeric(names(table(unlist(selected.lasso.placenta))))],in.KO = names(table(unlist(selected.lasso.placenta)))%in% s.placenta.freq[,1])
+```
+
+```{r logistic without panalty}
+
+# select the most variable 71 genes from the 81
+most.71variable <- discv1.placenta.elevated$counts[rank(apply(discv1.placenta.elevated$counts, 1, sd))>(nrow(discv1.placenta.elevated$counts)-71),]
+
+discv1.placenta71 <- discv1.placenta.elevated
+discv1.placenta71$counts <- most.71variable
+
+log.fit <- glm(discv1.placenta71$samples$PE~scale(t(discv1.placenta71$counts)), family = 'binomial')
+which(summary(log.fit)$coefficients[,4]<0.05)
+```
+
+# continuous phenotypes
+```{r cfrna v19 CAMK2G}
+
+CAMK2G <- discv1$counts["ENSG00000148660",]
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+s.placenta_CAMK2G_ako <- AKO(t(discv1.placenta.elevated$counts), CAMK2G, w.method = "lasso.lcd", n_bootstraps = 50, threshold.q = 0, r = r_emp, sparsity = 1, gamma = 0.3)
+saveRDS(s.placenta_CAMK2G_ako, "discv1_plsko_placneta_CAMK2G_ako.rds")
+
+s.placenta_CAMK2G_ako <- readRDS("discv1_plsko_placneta_CAMK2G_ako.rds")
+colnames(t(discv1.placenta.elevated$counts))[s.placenta_CAMK2G_ako$ako.s]
+
+table(unlist(s.placenta_CAMK2G_ako$s))
+```
+
+```{r cfrna v19 GSPT1}
+
+GSPT1 <- discv1$counts["ENSG00000103342",]
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+s.placenta_GSPT1_ako <- AKO(t(discv1.placenta.elevated$counts), GSPT1, w.method = "lasso.lcd", n_bootstraps = 50, threshold.q = 0, r = r_emp, sparsity = 1, gamma = 0.3)
+saveRDS(s.placenta_GSPT1_ako, "discv1_plsko_placneta_GSPT1_ako.rds")
+
+s.placenta_GSPT1_ako <- readRDS("discv1_plsko_placneta_GSPT1_ako.rds")
+colnames(t(discv1.placenta.elevated$counts))[s.placenta_GSPT1_ako$ako.s]
+
+table(unlist(s.placenta_GSPT1_ako$s))
+```
+
+```{r cfrna v19 RNF14}
+
+RNF14 <- discv1$counts["ENSG00000013561",]
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+s.placenta_RNF14_ako <- AKO(t(discv1.placenta.elevated$counts), RNF14, w.method = "lasso.lcd", n_bootstraps = 50, threshold.q = 0, r = r_emp, sparsity = 1, gamma = 0.3)
+saveRDS(s.placenta_RNF14_ako, "discv1_plsko_placneta_RNF14_ako.rds")
+
+s.placenta_RNF14_ako <- readRDS("discv1_plsko_placneta_RNF14_ako.rds")
+colnames(t(discv1.placenta.elevated$counts))[s.placenta_RNF14_ako$ako.s]
+
+table(unlist(s.placenta_RNF14_ako$s))
+
+colnames(t(discv1.placenta.elevated$counts))[c(63,11,72,10,25,3)]
+```
+
+```{r RNF14 post selection examine}
+#MBNL3
+MBNL3 <- discv1$counts["ENSG00000076770",]
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14, family = 'binomial'))
+
+summary(glm(discv1.placenta.elevated$samples$PE~MBNL3, family = 'binomial'))
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14 + MBNL3, 
+            family = 'binomial'))
+cor(RNF14, MBNL3)
+
+#BPGM
+BPGM <- discv1$counts["ENSG00000172331",]
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14, family = 'binomial'))
+
+summary(glm(discv1.placenta.elevated$samples$PE~BPGM, family = 'binomial'))
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14 + BPGM, 
+            family = 'binomial'))
+cor(RNF14, BPGM)
+
+#FAM46A
+FAM46A <- discv1$counts["ENSG00000112773",]
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14, family = 'binomial'))
+summary(glm(discv1.placenta.elevated$samples$PE~FAM46A, family = 'binomial'))
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14 + FAM46A, 
+            family = 'binomial'))
+cor(RNF14, FAM46A)
+
+summary(glm(RNF14~ BPGM + FAM46A))
+summary(glm(RNF14~ MBNL3 + FAM46A))
+summary(glm(discv1.placenta.elevated$samples$PE ~ BPGM + FAM46A, family = 'binomial'))
+
+
+GM2A <- discv1$counts["ENSG00000196743",]
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14, family = 'binomial'))
+summary(glm(discv1.placenta.elevated$samples$PE~GM2A, family = 'binomial'))
+summary(glm(discv1.placenta.elevated$samples$PE~RNF14 + GM2A, 
+            family = 'binomial'))
+cor(RNF14, GM2A)
+
+MYLIP <- discv1$counts["ENSG00000007944",]
+summary(glm(discv1.placenta.elevated$samples$PE~MYLIP, 
+            family = 'binomial'))
+```
+
+```{r RN7SL381P}
+RN7SL381P <- discv1$counts["ENSG00000263968",]
+
+plot(pca(t(discv1.placenta.elevated$counts), ncomp =10)$cum.var)
+r_emp <- r_criterion(t(discv1.placenta.elevated$counts), rmax = 8)
+
+s.placenta_RN7SL381P_ako <- AKO(t(discv1.placenta.elevated$counts), RN7SL381P, w.method = "lasso.lcd", n_bootstraps = 50, threshold.q = 0, r = r_emp, sparsity = 1, gamma = 0.3)
+saveRDS(s.placenta_RN7SL381P_ako, "discv1_plsko_placneta_RN7SL381P_ako.rds")
+
+s.placenta_RN7SL381P_ako <- readRDS("discv1_plsko_placneta_RN7SL381P_ako.rds")
+colnames(t(discv1.placenta.elevated$counts))[s.placenta_RN7SL381P_ako$ako.s]
+
+table(unlist(s.placenta_RN7SL381P_ako$s))
+```
+
+
+# no filter: 7160 vars (discv1)
+```{r no filter discv1}
+it = 50
+set.seed(1)
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+r_emp <- r_criterion(t(discv1$counts), rmax = 10)
+
+discv1.plsko <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1$counts), method = "PLSKO.only", threshold.abs = 0.5, r = r_emp)
+                      #S <- ko.filter(X = t(discv1$counts), Xk = ko$ko, y = discv1$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(ko)#, S = S))
+                    }
+
+saveRDS(discv1.plsko, "discv1_plsko.rds")
+discv1_plsko <- readRDS("discv1_plsko.rds")
+
+#AKO with knockoff
+discv1.7k.ko.list <- lapply(discv1_plsko, function(x){
+  x$ko
+})
+
+discv1.7k.ako <- AKO.wko(X = t(discv1$counts), y = discv1.placenta.elevated$samples$PE, Xko.list = discv1.7k.ko.list, w.method = "lasso.logistic")
+saveRDS(discv1.7k.ako, "discv1.7k_ako.rds")
+discv1.7k.ako <- readRDS("discv1.7k_ako.rds")
+colnames(t(discv1$counts))[discv1.7k.ako$ako.s]
+table(unlist(discv1.7k.ako$s))
+colnames(t(discv1$counts))[c(7040, 151, 1351, 6887,1738, 4697)]
+```
+```{r limma discv1 7k}
+
+ disc.limma <- disc.dge %>% calcNormFactors(method = "TMM")
+ disc.limma$counts <- disc.limma$counts[,disc.limma$samples$title %in% time1$title]
+ disc.limma$samples <- disc.limma$samples[disc.limma$samples$title %in% time1$title,]
+ disc.limma$samples$PE <- ifelse(disc.limma$samples$disease=="control", yes = "control", no="PE")
+ disc.limma$samples$PE <- as.factor(disc.limma$samples$PE)
+
+# disc.filter.limma <- disc.limma
+#disc.filter.limma$counts <- most.variable.limma
+
+# limma fit
+design <- model.matrix(~disc.limma$samples$PE)
+
+v <- voom(disc.limma, design, span = 0.9)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,]
+
+row.names(limma.sig)
+#row.names(limma.sig)[which(row.names(limma.sig) %in% gene.num.7k)]
+```
+
+### wilcoxon
+```{r wilcoxon 7k}
+discv1.pe <- discv1$counts[,disc.limma$samples$disease!="control"]
+discv1.control <- discv1$counts[,disc.limma$samples$disease=="control"]
+
+wilcox.7k <- lapply(1:nrow(discv1.pe), function(gene.i){
+  wilcox.test(discv1.pe[gene.i,], discv1.control[gene.i,])$p.value
+})
+
+wilcox.p.adj <- p.adjust(unlist(wilcox.7k))
+which(wilcox.p.adj<0.05)
+
+rownames(discv1$counts)[which(wilcox.p.adj<0.05)]
+```
+
+
+## 3k
+```{r}
+most.variable.3k <- discv1$counts[rank(apply(discv1$counts, 1, sd))>nrow(discv1$counts)-3000,]
+
+discv1.filter.3k <- discv1
+discv1.filter.3k$counts <- most.variable.3k
+
+it = 50
+set.seed(1)
+cl <- makeCluster(11) 
+registerDoParallel(cl)
+r_emp <- r_criterion(t(discv1.filter.3k$counts), rmax = 10)
+
+discv1.3k.plsko <- foreach(i = 1:it, .inorder = T, .errorhandling = "stop", .packages = c("glmnet","knockoff","MASS","rARPACK","mixOmics","CVglasso", 
+                    "glmnet","irlba","kernlab")) %dopar% {
+                      
+                      ko <- knockoffX.sim(t(discv1.filter.3k$counts), method = "PLSKO.only", threshold.abs = 0.5, r = r_emp)
+                      #S <- ko.filter(X = t(discv1$counts), Xk = ko$ko, y = discv1$samples$PE, q = 0.05, method = "lasso.logistic")
+                      return(ko)#, S = S))
+                    }
+
+saveRDS(discv1.3k.plsko, "discv1_3k_plsko.rds")
+discv1.3k.plsko <- readRDS("discv1_3k_plsko.rds")
+
+#AKO with knockoff
+discv1.3k.ko.list <- lapply(discv1.3k.plsko, function(x){
+  x$ko
+})
+
+discv1.3k.ako <- AKO.wko(X = t(discv1.filter.3k$counts), y = discv1.placenta.elevated$samples$PE, Xko.list = discv1.3k.ko.list, w.method = "lasso.logistic")
+saveRDS(discv1.3k.ako, "discv1.3k_ako.rds")
+discv1.3k.ako <- readRDS("discv1.3k_ako.rds")
+colnames(t(discv1.filter.3k$counts))[discv1.3k.ako$ako.s]
+table(unlist(discv1.3k.ako$s))
+colnames(t(discv1.filter.3k$counts))[c(2934, 2842, 880 )]
+```
+
+
+
+```{r limma discv1 3k}
+
+discv1.limma <- discv1.dge %>% calcNormFactors(method = "TMM")
+discv1.limma$counts <- discv1.limma$counts[,discv1.limma$samples$title %in% time1$title]
+discv1.limma$samples <- discv1.limma$samples[discv1.limma$samples$title %in% time1$title,]
+discv1.limma$samples$PE <- ifelse(discv1.limma$samples$disease=="control", yes = "control", no="PE")
+discv1.limma$samples$PE <- as.factor(discv1.limma$samples$PE)
+
+discv1.filter.limma <- discv1.limma
+discv1.filter.limma$counts <- discv1.limma$counts[rownames(discv1.limma$counts) %in% rownames(most.variable.3k),]
+
+# limma fit
+design <- model.matrix(~discv1.filter.limma$samples$PE)
+
+v <- voom(discv1.filter.limma, design, span = 0.9)
+limma.fit <- lmFit(v, design)
+limma.efit <- eBayes(limma.fit)
+limma.t <- limma.efit$t
+summary(decideTests(limma.efit))
+
+limma.t <- cbind(limma.t, decideTests(limma.efit)) 
+limma.sig <- limma.t[limma.t[,4]!=0,]
+
+row.names(limma.sig)
+#row.names(limma.sig)[which(row.names(limma.sig) %in% gene.num.7k)]
+heatmap(cor(t(discv1.filter.limma$counts[rownames(limma.sig),])), scale = "none")
+```
+
+```{r wilcoxon 3k}
+discv1.filter.3k.pe <- discv1.filter.3k$counts[,disc.limma$samples$disease!="control"]
+discv1.filter.3k.control <- discv1.filter.3k$counts[,disc.limma$samples$disease=="control"]
+
+wilcox.3k <- lapply(1:nrow(discv1.filter.3k.pe), function(gene.i){
+  wilcox.test(discv1.filter.3k.pe[gene.i,], discv1.filter.3k.control[gene.i,])$p.value
+})
+
+wilcox.p.adj <- p.adjust(unlist(wilcox.7k))
+which(wilcox.p.adj<0.05)
+
+rownames(discv1.filter.3k$counts)[which(wilcox.p.adj<0.05)]
+```
+
+# 7k semi vs FDR
+```{r 7k semisim fun}
+real_sim_7k <- function(data, p_s, y.noise = 0, A = c(3,5), y.dis = "Normal", 
+                     rmax = 10, ko.diagnosis = F, q = 0.05,
+                     seed = Sys.time(), call.var = "seed"){
+  set.seed(seed)
+
+  X <- scale(data)
+  Gy <- DGPy.AR1(X = X, s = p_s, c = y.noise, y.dis = y.dis, A = A)
+  y <- Gy$y
+  
+  #rank
+  r_emp <- r_criterion(X, rmax = rmax)
+  r_emp = max(2, r_emp) # make sure r!=0}
+  
+  # generate KO
+  
+  plsko.plsonly.full <- knockoffX.sim(X, method = "PLSKO.only", threshold.q = 0, r = r_emp)
+  
+  plsko.0.3NB.full <- knockoffX.sim(X, method = "PLSKO.only", threshold.q = 0.3, r = r_emp)
+  plsko.0.5NB.full <- knockoffX.sim(X, method = "PLSKO.only", threshold.q = 0.5, r = r_emp)
+  plsko.0.8NB.full <- knockoffX.sim(X, method = "PLSKO.only", threshold.q = 0.8, r = r_emp)
+  
+  plsko.full.0.3sparse <- knockoffX.sim(X, method = "PLSKO.only", threshold.abs = 0, r = r_emp, sparsity = 1-0.3)
+  plsko.full.0.5sparse <- knockoffX.sim(X, method = "PLSKO.only", threshold.abs = 0, r = r_emp, sparsity = 1-0.5)
+  plsko.full.0.8sparse <- knockoffX.sim(X, method = "PLSKO.only", threshold.abs = 0, r = r_emp, sparsity = 1-0.8)
+  
+  Xk <- list(plsko.full = plsko.plsonly.full$ko,
+             plsko.0.3NB.full = plsko.0.3NB.full$ko,
+             plsko.0.5NB.full = plsko.0.5NB.full$ko,
+             plsko.0.8NB.full = plsko.0.8NB.full$ko,
+             plsko.full.0.3sparse = plsko.full.0.3sparse$ko,
+             plsko.full.0.5sparse = plsko.full.0.5sparse$ko,
+             plsko.full.0.8sparse = plsko.full.0.8sparse$ko
+  )
+  knockx_set <- names(Xk)
+  
+
+  run.time <- list(plsko.full = plsko.plsonly.full$run.time,
+             plsko.0.3NB.full = plsko.0.3NB.full$run.time,
+             plsko.0.5NB.full = plsko.0.5NB.full$run.time,
+             plsko.0.8NB.full = plsko.0.8NB.full$run.time,
+             plsko.full.0.3sparse = plsko.full.0.3sparse$run.time,
+             plsko.full.0.5sparse = plsko.full.0.5sparse$run.time,
+             plsko.full.0.8sparse = plsko.full.0.8sparse$run.time
+  )
+  
+  
+  return(list(Xk = Xk,
+              run.time = run.time))
+}
+```
+
+```{r run 7k vs FDR}
+cl <- makeCluster(26) 
+registerDoParallel(cl)
+
+r_emp_X <- r_criterion(t(discv1$counts), rmax = 10)
+
+
+# p_x = 100, 150, 200, p_s = 25
+it = 50
+
+test <- foreach(i = 1:it,
+                           .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             res <- real_sim_7k(t(discv1$counts), p_s = 50, seed = i, call.var = "seed")
+                           }
+saveRDS(test, "./semi_7k_Xk.rds")
+test <- readRDS("./semi_7k_Xk.rds")
+
+result <- foreach(i = 1:it,  .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "kernlab")) %dopar%{
+                             source(paste0(source.path, "data_sim1.R"))
+                             X <- scale(t(discv1$counts))
+                             set.seed(i)
+  Gy <- DGPy.AR1(X = X, s = 50, c = 0, A = c(3,5))
+  y <- Gy$y
+  ko.this <- test[[i]]$Xk
+  W <- lapply(ko.this, function(ko){
+    stat.lasso_coefdiff(X, ko, y)
+  })
+  names(W) <- names(ko.this)
+  return(list(W = W, Gy = Gy))
+}
+saveRDS(result, "./semi_7k_W.rds")
+
+##
+result_fdr <- lapply(result, function(w){
+  fdr.df <- lapply(seq(0.05,0.5,0.05), function(q){
+      df <- lapply(w$'W', function(W){
+         # find the knockoff threshold T
+        p = length(W)
+  t = sort(c(0, abs(W)))
+  
+  ratio = c(rep(0, p))
+  #ratio.plus = c(rep(0, p))
+  
+    for (j in 1:p) {
+      ratio[j] = (sum(W <= -t[j]))/max(1, sum(W >= t[j]))
+      #ratio.plus[j] = (1+sum(W <= -t[j]))/max(1, sum(W >= t[j]))
+    }
+
+  id = which(ratio <= q)[1]
+  #id.plus = which(ratio.plus <= q)[1]
+  
+  if(length(id) == 0){
+    T = Inf
+  } else {
+    T = t[id]
+  }
+  
+  # if(length(id.plus) == 0){
+  #   T.plus = Inf
+  # } else {
+  #   T.plus = t[id.plus]
+  # }
+  # set of discovered variables
+  S = integer0_test(which(W >= T))
+  #S.plus = integer0_test(which(W >= T.plus))
+  fdr = fdr(S, w$Gy$Beta)
+  pow = pow(S, w$Gy$Beta)
+  
+  return(list(q = q, fdp = fdr, tpp = pow))
+  })
+      df
+  })
+fdr.df
+})
+```
+
