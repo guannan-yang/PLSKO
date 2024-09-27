@@ -1,4 +1,4 @@
-![](https://github.com/guannan-yang/PLSKO/blob/main/docs/plsko.png=10x10)
+![](https://github.com/guannan-yang/PLSKO/blob/main/docs/plsko.png)
 
 # PLSKO
 Package and source codes used in paper: `PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection'(https://www.biorxiv.org/content/10.1101/2024.08.06.606935v1)
