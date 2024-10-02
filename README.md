@@ -46,6 +46,8 @@ If warnings of installing dependencies appears, please install the dependencies 
 | **Step 2: Importance Score Calculation (`W`)** | (import from pkg `Knockoff`)     | -                                            | A _vector_ of `p` or a `n_ko x p` _matrix_                                                        | :heavy_check_mark:           | :heavy_check_mark:                 |
 | **Step 3: Knockoff Filtering and Variable Selection**                 | `KO_with_W()` <br>`AKO_with_W()` | -                                             | A list (class _"knockoff.result"_ or _"AKO.result"_) with components: <br> `statistic`, `selected`, `ako.selected` | :heavy_check_mark:           | :heavy_check_mark:                 |
 
+[View the Knockoff Framework Diagram]([https://guannan-yang.github.io/PLSKO/PLSKO.html](https://github.com/guannan-yang/PLSKO/blob/main/docs/diagram-ko.pdf))
+
 ### Additional Notes:
 - ^The workflow includes generating knockoff variables, importance score calculation, and filtering.
 
