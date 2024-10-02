@@ -9,14 +9,14 @@ You can install the development version of the package from GitHub using the fol
 ```{r installation}
 # install.packages("devtools")
 devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE)
-
-#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:
+```
+If warnings of installing dependencies appears, please install the dependencies manually by running the following code:
+```{r install dependencies}
 # install.packages(c("knockoff","progress", "parallel", "doParallel", "foreach"))
 #
 # if (!require("BiocManager", quietly = TRUE))
 #     install.packages("BiocManager")
 # BiocManager::install("mixOmics")
-
 ```
 
 # Vignette 
