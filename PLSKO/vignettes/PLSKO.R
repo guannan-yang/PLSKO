@@ -1,11 +1,8 @@
 ## ----include = FALSE----------------------------------------------------------
 knitr::opts_chunk$set(
-  collapse = TRUE,
+  collapse = FALSE,
   comment = "#>"
 )
-
-## ----setup--------------------------------------------------------------------
-#library(PLSKO)
 
 ## ----installation-------------------------------------------------------------
 # install.packages("devtools")
@@ -105,10 +102,6 @@ result = plsAKO(X, y)
 print(result)
 fdp(result)
 
-#Binary response
-# result = plsAKO(X, y_bin)
-# print(result)
-# fdp(result)
 
 ## ----eg2_semi_synthetic_generate----------------------------------------------
 data("prot_placenta")
@@ -248,4 +241,7 @@ W_list = lapply(1:n_ko, function(i) my_knockoff_stat_Z(X, plsko_list[[i]], y))
 # perform the knockoff filtering and variable selection with AKO method
 result_ako_W = AKO_withW(W_list, q = 0.05)
 print(result_ako_W)
+
+## ----session_info-------------------------------------------------------------
+sessionInfo()
 
