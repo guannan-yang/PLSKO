@@ -5,9 +5,18 @@ Package and source codes used in paper, `PLSKO: a robust knockoff generator to c
 <img src="https://github.com/guannan-yang/PLSKO/blob/main/docs/plsko.png" width=25% height=25%>
 
 # Installation
-```r
+You can install the development version of the package from GitHub using the following code:
+```{r installation}
 # install.packages("devtools")
-devtools::install_github("guannan-yang/PLSKO/PLSKO")
+devtools::install_github("guannan-yang/PLSKO/PLSKO", quiet = TRUE)
+
+#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:
+# install.packages(c("knockoff","progress", "parallel", "doParallel", "foreach"))
+#
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("mixOmics")
+
 ```
 
 # Vignette 
@@ -15,7 +24,7 @@ devtools::install_github("guannan-yang/PLSKO/PLSKO")
 
 # Knockoff Steps and Functions Pipeline
 
-## General Input
+## Basic Input
 - **Input: predictor matrix X**  
   Dimensions: `n x p`
   
