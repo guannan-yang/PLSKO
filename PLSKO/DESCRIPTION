@@ -1,7 +1,7 @@
 Package: PLSKO
 Type: Package
 Title: Robust knockoff variable generator for biological omics data
-Version: 0.1.0
+Version: 0.2.0
 Author: Guannan Yang
 Maintainer: Guannan Yang <guannany@student.unimelb.edu.au>
 Description: Knockoff is a framework to control FDR in variable selection by incorporating any model. This package include the function to implement PLSKO and PLS-AKO to generate robust knockoff variables and other functions in the knockoff framework.
@@ -11,12 +11,17 @@ LazyData: true
 Suggests: 
     knitr,
     rmarkdown,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    foreach,
+    doParallel
 Imports: 
     glmnet,
     knockoff,
-    mixOmics
-RoxygenNote: 7.3.1
+    mixOmics,
+    progress,
+    ggplot2,
+    pls
+RoxygenNote: 7.3.2
 Depends: 
     R (>= 2.10)
 VignetteBuilder: knitr

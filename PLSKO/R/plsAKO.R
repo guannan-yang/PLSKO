@@ -90,7 +90,7 @@ plsAKO <- function(X, y, n_ko = 25,
 
   #Input type validation
   if(is.data.frame(X)){
-    X.name = names(X)
+    X.names = colnames(X)
     X = as.matrix(X)
   }else if (is.matrix(X)) {
     X.names = colnames(X)
@@ -150,9 +150,10 @@ plsAKO <- function(X, y, n_ko = 25,
         parallel = FALSE
       }
     }
+  }
 
     if(parallel){
-    para.result <- foreach::foreach(i = 1:n_ko, .packages = 'knockoff') %dopar% {
+    para.result <- foreach::foreach(i = 1:n_ko, .packages = c('knockoff', 'progress')) %dopar% {
           set.seed(seed + i-1)
           # Generate PLSKO knockoff
           ko = plsko(X, seed = seed+i-1, ...)
@@ -169,7 +170,8 @@ plsAKO <- function(X, y, n_ko = 25,
     pvals = do.call(cbind, lapply(para.result, function(x) x$pvals))
     selected = lapply(para.result, function(x) x$S)
   }
- } else {
+
+  else {
    # Initialize matrix to store p-values from each knockoff iteration
    pvals = matrix(0, ncol(X), n_ko)
    selected <- list()
@@ -201,7 +203,7 @@ plsAKO <- function(X, y, n_ko = 25,
   threshold = bhq_threshold(aggregated_pval, fdr=q)
 
   ako.s <- which(aggregated_pval <= threshold)
-  names(ako.s) = X.names[ako.s]
+  if(!is.null(X.names) & length(ako.s) > 0) names(ako.s) = X.names[ako.s]
 
   result <- structure(list(call = match.call(),
                            s = selected,
@@ -349,7 +351,7 @@ AKO_withKO <- function(X, Xko.list, y,
   aggregated_pval = apply(pvals, 1, quantile_aggregation, gamma=gamma)
   threshold = bhq_threshold(aggregated_pval, fdr=q)
   ako.s <- which(aggregated_pval <= threshold)
-  names(ako.s) = X.names[ako.s]
+  if(!is.null(X.names) & length(ako)!=0) names(ako.s) = X.names[ako.s]
 
   result <- structure(list(call = match.call(),
                            selected = selected,

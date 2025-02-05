@@ -1,0 +1,173 @@
+---
+title: "PLSKO Tuning"
+author: Guannan Yang
+date: "26-01-2024"
+toc: yes
+output: 
+  #rmarkdown::html_vignette
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+    toc_depth: 3
+    number_sections: yes
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: yes
+    editor_options: 
+      chunk_output_type: console
+  markdown: 
+    wrap: 72
+vignette: >
+  %\VignetteIndexEntry{PLSKO}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  
+---
+
+```{=html}
+<script>
+function myFunction(id) {
+    var x = document.getElementById(id);
+    if (x.style.display === "none") {
+        x.style.display = "block";
+    } else {
+        x.style.display = "none";
+    }
+}
+</script>
+```
+
+```{=html}
+<style>
+div .info {
+  margin: auto;
+  background-color: #EAF0FB;
+  width: 95%;
+  padding: 10px;
+}
+</style>
+```
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = FALSE,
+  comment = "#>"
+)
+```
+
+# Introduction
+This vignette provides a step-by-step guide to tuning the parameters of the `PLSKO' function. PLSKO is a knockoff generator that generates knockoff features for a given dataset. The `PLSKO' function requires several parameters to be specified, and tuning these parameters can impact the performance of the knockoff generator and make ensure that the generated knockoff features are valid. This vignette provides a detailed explanation of the parameters of the PLSKO function and demonstrates how to tune these parameters using semi-simulation.
+
+# Parameters of the PLSKO Function
+The PLSKO function requires several parameters to be specified. The key parameters of the PLSKO function are as follows:
+
+- Number of components (`ncomp`): An integer specifying the number of components to use in the PLS regression. Generally, using more components leads 1) more variance between variables captured, 2) makes the knockoff variables more similar to the original variables, therefore 3) lower FDR and lower power, which means 4) fewer discoveries. Also, more components increase the computational cost.
+
+- Threshold of neighbourhood definition (`threshold.abs` or `threshold.q`): The threshold of neighbourhood definition is used to define the neighbour variables. In default setting of PLSKO and this The neighbourhood information is used to capture the correlation structure between variables. The threshold can be defined as an absolute value (`threshold.abs`) or as a quantile (`threshold.q`) of the absolute values of the correlation coefficients between variables. A higher threshold leads to a sparser neighbourhood structure, which can improve the performance of the knockoff generator. 
+
+- Sparsity level (`sparsity`): A numeric value between 0 (excluded) and 1 specifying the sparsity level in the PLS regression. 1 means no sparsity. Proper sparsity level can improve the performance of the knockoff generator in effectively controlling the false discovery rate (FDR) and increasing the power.
+
+# General idea
+The idea is to use semi-simulation to evaluate the empirical FDR and power of the PLSKO function with different parameter values and select the optimal parameter values which can achieve the desired FDR. 
+
+Semi-simulation means that we generate the response variable (i.e. an artificial \eqn{y}) with known true coefficients with using the real data we are going to use (i.e. \eqn{X}) and use the PLSKO function to generate knockoff features. We then compare the selected variables with the true coefficients to evaluate the FDR and power of the PLSKO function. By repeating this process with different parameter values, we can identify the optimal parameter values that achieve the desired FDR. According to Model-X knockoff definition, knockoff variables are generated using \eqn{X} only, regardless of the response variable \eqn{y}. Therefore, as long as we have a valid knockoff variable set, we can use it for any response variable \eqn{y}, and make sure the FDR is controlled at the desired level.
+
+# Main function: `plsko_tuning`
+The `plsko_tuning` function is used to tune the parameters of the PLSKO function, allowing users to test a series of parameter value combinations for their dataset. Apart from the parameter values to be tested, the `plsko_tuning` function also requires some important input, including:
+- `X`: Your real omics data.
+
+- `n_ko`: The number of knockoff variables to generate for each parameter configuration. Default is 10. Please note that the larger the number of knockoff variables, the more confident the tuning results, but the more computational cost.
+
+- `q`: The false discovery rate (FDR) level to control. Default is 0.05. Usually based on your own research design.
+
+- `fdp.measure`: The measure to assess the FDR of the certain parameter configuration over repeated `n_ko` simulations. Default is `median`, which means we use the median of the FDPs over `n_ko` simulations to represent the FDR of the certain parameter configuration. Other options include `mean`, `either` (either mean or median under than the target level), `both` (require both of mean and median of FDP smaller than FDR). This measure does not affect the tuning results, but only affects the selection of the optimal parameter configuration.
+
+- `early.stop`: A logical value indicating whether to stop the simulation early if the FDR of a certain parameter configuration is already smaller than the target level. Default is `FALSE`. If `TRUE`, the simulation will stop early if the FDR of a certain parameter configuration is already smaller than the target level, which can save computational time. If `FALSE`, the simulation will continue until all parameter configurations are tested.
+
+-`p_s`: The number of assumed true variables in the data. Default is 10\% of the number of variables. This value is preferred to be larger in large dataset, e.g. 1/q, to ensure the estimate of FDR is stable and more accurate. 
+
+## Tips
+- The `plsko_tuning` function tests across the combinations of different parameters. For example, when you test 5 different values for `ncomp`, 5 different values for `threshold.abs`, and 5 different values for `sparsity`, the total number of parameter configurations to test is 5 * 5 * 5 = 125. Adding up the number of knockoff variables (`n_ko`) to generate for each parameter configuration, the total number of simulations is 125 * `n_ko`, which means 125 * `n_ko` knockoff variables set will be generated and evaluated. Therefore, the computational cost can be high when testing a large number of parameter configurations. It is recommended to start with a small number of parameter configurations and increase the number of configurations gradually based on the computational resources available.
+
+- The `plsko_tuning` function is computationally intensive, especially when the number of knockoff variables (`n_ko`) is large or the number of parameter configurations to test is large. Therefore, it is recommended to run the function in parallel computing and with sufficient computational resources.
+
+- A single run of knockoff generation might take long time, especially when the number of variables in `X` or the components (`ncomp`) is large. For example, a single run of knockoff generation for `X` with 100 variables and 100 samples might take about 2 seconds; a single run of knockoff generation for `X` with 1200 variables, 150 samples and 5 components might take about 25 seconds. It is recommended to test the computational cost of a single run of knockoff generation before running the `plsko_tuning` function.
+
+- The `plsko_tuning` function gives the optimal of absolute threshold `threshold.abs` only. 
+
+# Case 1: cfRNA data for pre-eclampsia study
+Here we show two examples of tuning the parameters of the PLSKO function using semi-simulation on real data.
+
+```{r case1tune}
+library(PLSKO)
+data(cfRNA_placenta)
+str(cfRNA_placenta)
+
+# Basic input
+X <- cfRNA_placenta$counts
+n_ko <- 10
+q <- 0.05
+p_s <- 10
+
+# Parameters to test
+ncomp <- c(3, 5, 7)
+threshold.abs <- c(0, 0.3, 0.5, 0.8)
+sparsity <- 1
+# We test on:
+expand.grid(ncomp = ncomp, threshold.abs = threshold.abs, sparsity = sparsity)
+
+# Run the tuning
+start.time <- Sys.time()
+
+cfRNA_tune <- plsko_tuning(X, n_ko = n_ko, p_s = p_s, q = q, ncomp = ncomp, threshold.abs = threshold.abs, sparsity = sparsity)
+
+end.time <- Sys.time()
+
+# Print the results
+plot(cfRNA_tune)
+
+# Print the time
+end.time - start.time
+```
+The `plsko_tuning` function run for 2 minutes to test 12 parameter configurations with 10 repeated simulations for each configuration on a 71 * 81 dataset. We observed that the neighbourhood threshold `threshold.abs` has a significant impact on the FDR and power of the PLSKO function, while the number of components `ncomp` have a moderate impact. The optimal parameter configuration is `ncomp = 2`, `threshold.abs = 0.2`, and `sparsity = 1`, although the mean of FDP is slightly higher than the target level. 
+
+Then we apply this optimal parameter configuration to the real data to generate the knockoff variables and select the important variables.
+```{r case1real}
+y <- cfRNA_placenta$metadata$PE
+ncomp <- cfRNA_tune$optimal$ncomp
+threshold.abs <- cfRNA_tune$optimal$threshold.abs
+sparsity <- cfRNA_tune$optimal$sparsity
+
+cfRNA_result <- plsAKO(X, y, n_ko = 25, ncomp = ncomp, threshold.abs = threshold.abs, sparsity = sparsity)
+print(cfRNA_result)
+
+# Or if you like using the configuration with the lowest average FDP
+user_optimal <- cfRNA_tune$mean[which.min(cfRNA_tune$mean$mean.fdp), ]
+cfRNA_result_alt <- plsAKO(X, y, n_ko = 25, ncomp = user_optimal$ncomp, threshold.abs = user_optimal$threshold.abs, sparsity = user_optimal$sparsity)
+print(cfRNA_result_alt)
+```
+
+# Conclusion
+Each dataset is unique, and the performance of the PLSKO function can be influenced by the dataset characteristics and the parameter values used. By tuning the parameter of PLSKO function using semi-simulation, we can identify the optimal parameter values that achieve the desired FDR. Comprehensive tuning of the parameters can improve the performance of the knockoff generator and also ensure that the generated knockoff features are valid.
+
+For more information on the PLSKO function and the `plsko_tuning` function, please refer to the package documentation and the function help files.
+
+# Please cite
+
+Yang, G., Menkhorst, E., Dimitriadis, E., & Le Cao, K. A. (2024). PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection. bioRxiv, 2024-08.
+
+
+# Session Info
+```{r}
+sessionInfo()
+```
+
+
+

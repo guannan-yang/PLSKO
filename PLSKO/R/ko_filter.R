@@ -222,8 +222,7 @@ ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
   # set of discovered variables
   S = integer0_test(which(W >= T))
 
-  if (!is.null(X.names) & !is.null(S))
-    names(S) = X.names[S]
+  if (!is.null(X.names) & length(S) > 0) names(S) = X.names[S]
 
   if(offset == "both"){
     id.plus = which(ratio.plus <= q)[1]
@@ -233,8 +232,7 @@ ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
       T.plus = t[id.plus]
     }
     S.plus = integer0_test(which(W >= T.plus))
-    if (!is.null(X.names))
-      names(S.plus) = X.names[S.plus]
+    if (!is.null(X.names) & length(S.plus) > 0) names(S.plus) = X.names[S.plus]
   }
 
   result <- structure(list(call = match.call(),
