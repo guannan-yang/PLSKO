@@ -21,6 +21,7 @@ If warnings of installing dependencies appears, please install the dependencies 
 
 # Vignette 
 [View the vignette](https://guannan-yang.github.io/PLSKO/PLSKO.html)
+[View how to tune your PLSKO](https://guannan-yang.github.io/PLSKO/PLSKO_tune.html)
 
 # Knockoff Steps and Functions Pipeline
 
