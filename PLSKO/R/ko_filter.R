@@ -234,8 +234,17 @@ ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
     S.plus = integer0_test(which(W >= T.plus))
     if (!is.null(X.names) & length(S.plus) > 0) names(S.plus) = X.names[S.plus]
   }
-
-  result <- structure(list(call = match.call(),
+  if(offset == "both"){
+    result <- structure(list(call = match.call(),
+                   statistic = W,
+                   threshold = T,
+                   threshold.plus = T.plus,
+                   selected = S,
+                   selected.plus = S.plus),
+              class = 'knockoff.result')
+  }
+  else{
+    result <- structure(list(call = match.call(),
                            #X = X,
                            #Xk = Xk,
                            #y = y,
@@ -243,14 +252,6 @@ ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
                            threshold = T,
                            selected = S),
                       class = 'knockoff.result')
-  if(offset == "both"){
-    structure(list(call = match.call(),
-                   statistic = W,
-                   threshold = T,
-                   threshold.plus = T.plus,
-                   selected = S,
-                   selected.plus = S.plus),
-              class = 'knockoff.result')
   }
 
   return(result)

@@ -250,7 +250,8 @@ plsko_semi_sim <- function(X, p_s, q, n_ko, plsko.ncomp, plsko.threshold.abs, pl
         ncores = all_cores
       }
       if (ncores>1) {
-        doParallel::registerDoParallel(cores=ncores)
+        cl <- parallel::makeCluster(ncores)
+        doParallel::registerDoParallel(cl)
         parallel = TRUE
       }
       else {
