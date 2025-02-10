@@ -213,7 +213,7 @@ plsko <- function(X, nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, n
         this.ncomp <- ncomp
       }
 
-      this.ncomp <- min(this.ncomp, ncol(X.run)) #maximum ncomp is the number of variables minus one in the regression
+      this.ncomp <- min(this.ncomp, ncol(X.run)-1) #maximum ncomp is the number of variables minus one in the regression
       this.ncomp <- max(this.ncomp, 2) #minimum 2 components
 
       #when sparsity < 1, sparse PLS regression is used for conditional distribution with sparse*p kept on each comp
