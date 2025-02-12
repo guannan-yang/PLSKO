@@ -11,7 +11,7 @@
 #' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is NULL, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
 #' @param sparsity Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).
 #' @param rmax An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.
-#' @param simpls Optional. A logical value indicating whether to use the SIMPLS algorithm for PLS regression. Default is FALSE. SIMPLS is faster but
+#' @param simpls Optional. A logical value indicating whether to use the SIMPLS algorithm for PLS regression. Default is FALSE. SIMPLS is faster but not applicable for sparse-PLS regression.
 #' @param seed An integer seed for reproducibility. Default is 1.
 #'
 #' @return A matrix of generated knockoff variables of \eqn{n \times p}
