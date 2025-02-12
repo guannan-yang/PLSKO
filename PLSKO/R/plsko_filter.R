@@ -12,6 +12,7 @@
 #' @param ncomp Optional. An integer specifying the number of components to use in the PLS regression. Default is \code{NULL}, the \code{ncomp} is determined empirically by \eqn{PC_p1} criterion.
 #' @param sparsity Optional. A numeric value between 0 and 1 specifying the sparsity level in the PLS regression. Default is 1 (no sparsity).
 #' @param rmax An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.
+#' @param simpls A logical value indicating whether to use the SIMPLS algorithm for PLS regression. Default is FALSE. SIMPLS is faster but not applicable for sparse-PLS regression.
 #'
 #' @param seed An integer seed for reproducibility. Default is 1.
 #'
@@ -73,10 +74,10 @@
 #'
 plsko_filter <- function(X, y, q = 0.05, method = "lasso.lcd", offset = 0,
                          nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1, rmax = 5,
-                         seed = 1
+                         seed = 1, simpls = F
                          ){
   set.seed(seed)
-  Xk= plsko(X, nb.list = nb.list, threshold.abs = threshold.abs, threshold.q = threshold.q, ncomp = ncomp, sparsity = sparsity, rmax = rmax)
+  Xk= plsko(X, nb.list = nb.list, threshold.abs = threshold.abs, threshold.q = threshold.q, ncomp = ncomp, sparsity = sparsity, rmax = rmax, simpls = simpls)
   result = ko_filter(X, Xk, y, q = q, method = method, offset = offset)
 
   # restructure the result
