@@ -37,7 +37,7 @@
 #'
 #' @export
 plsko_tuning <- function(X, p_s = round(0.1 * ncol(X)), n_ko = 10, q = 0.05, parallel = TRUE, ncore = NULL,
-                         ncomp = seq(3, 9, 2), threshold.q = 0, threshold.abs = 0, sparsity = 1, simpls = F,
+                         ncomp = seq(3, 9, 2), threshold.q = NULL, threshold.abs = 0, sparsity = 1, simpls = F,
                          seed = 1, fdp.measure = "median", early.stop = F) {
 
   set.seed(seed)
@@ -61,8 +61,8 @@ plsko_tuning <- function(X, p_s = round(0.1 * ncol(X)), n_ko = 10, q = 0.05, par
   ## threshold.abs test as descending order -- the higher the better
   threshold.abs <- sort(threshold.abs, decreasing = T)
   ## no preferable order for sparsity
-
-  test.grid <- expand.grid(ncomp = ncomp, threshold.abs = threshold.abs, sparsity = sparsity)
+  ## higher threshold is the most preferable, then a smaller ncomp
+  test.grid <- expand.grid(sparsity = sparsity, ncomp = ncomp, threshold.abs = threshold.abs)
 
   # Test across the grid
   full.result <- data.frame()
@@ -85,25 +85,25 @@ plsko_tuning <- function(X, p_s = round(0.1 * ncol(X)), n_ko = 10, q = 0.05, par
 
     if(early.stop){
       if(fdp.measure == "mean"){
-        if(semi_result$average.res$mean.fdp < q) {
+        if(semi_result$average.res$mean.fdp <= q) {
           print(paste0("Config", i, ":", "ncomp = ", ncomp, ", threshold.abs = ", threshold.abs, ", sparsity = ", sparsity, ", got the mean FDP of ", semi_result$average.res$mean.fdp, "under the target ", q, ". Stop tune."))
           break
         }
 
       }
       else if(fdp.measure == "median"){
-        if(semi_result$median.res$median.fdp < q) {
+        if(semi_result$median.res$median.fdp <= q) {
           print(paste0("Config", i, ":", "ncomp = ", ncomp, ", threshold.abs = ", threshold.abs, ", sparsity = ", sparsity, ", got the median FDP of", semi_result$median.res$median.fdp, "under the target", q, ". Stop tune."))
           break
         }
       }
       else if(fdp.measure == "either"){
-        if(semi_result$average.res$mean.fdp < q | semi_result$median.res$median.fdp < q){
+        if(semi_result$average.res$mean.fdp <= q | semi_result$median.res$median.fdp <= q){
           print(paste0("Config", i, ":", "ncomp = ", ncomp, ", threshold.abs = ", threshold.abs, ", sparsity = ", sparsity, ", got the mean FDP of", semi_result$average.res$mean.fdp, "and the median FDP of", median.result$median.fdq, "under the target", q, ". Stop tune"))
           break
         }
         else if(fdp.measure == "both"){
-          if(semi_result$average.res$mean.fdp < q & semi_result$median.res$median.fdp < q){
+          if(semi_result$average.res$mean.fdp <= q & semi_result$median.res$median.fdp <= q){
             print(paste0("Config", i, ":", "ncomp = ", ncomp, ", threshold.abs = ", threshold.abs, ", sparsity = ", sparsity, ", got the mean FDP of", semi_result$average.res$mean.fdp, "and the median FDP of", median.result$median.fdq, "under the target", q, ". Stop tune"))
             break
           }
@@ -259,6 +259,8 @@ plsko_semi_sim <- function(X, p_s, q, n_ko, plsko.ncomp, plsko.threshold.abs, pl
       }
     }
   }
+
+  X <- as.matrix(X)
 
   # run knockoff filter parallel or not
   if(parallel){
