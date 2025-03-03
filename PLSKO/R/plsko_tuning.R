@@ -13,8 +13,8 @@
 #' @param parallel Logical. If TRUE, run the semi-simulation in parallel. Default is TRUE.
 #' @param ncore An integer specifying the number of cores to use for parallel computation. Default is NULL.
 #' @param ncomp A integer or a vector of integers to be tested, specifying the number of components to be used in PLSKO. Default is seq(3, 9, 2).
-#' @param threshold.q A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying a quantile threshold to define neighborhoods. Default is 0. This parameter will be used if threshold.abs is not provided.
-#' @param threshold.abs A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying an absolute correlation threshold to define neighborhoods. Default is 0.
+#' @param threshold.q A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying a quantile threshold to define neighborhoods. Default is NULL. This parameter will be used if threshold.abs is not provided.
+#' @param threshold.abs A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying an absolute correlation threshold to define neighborhoods. Default is NULL.
 #' @param sparsity A numeric value or a vector of numeric values (between 0 (excluded) - 1) to be tested, specifying the sparsity level in the PLS regression. Default is 1.
 #' @param simpls Logical. If TRUE, use the SIMPLS algorithm to fit the PLS model. Default is FALSE.
 #' @param seed An integer seed for reproducibility. Default is 1.
@@ -37,7 +37,7 @@
 #'
 #' @export
 plsko_tuning <- function(X, p_s = round(0.1 * ncol(X)), n_ko = 10, q = 0.05, parallel = TRUE, ncore = NULL,
-                         ncomp = seq(3, 9, 2), threshold.q = NULL, threshold.abs = 0, sparsity = 1, simpls = F,
+                         ncomp = seq(3, 9, 2), threshold.q = NULL, threshold.abs = NULL, sparsity = 1, simpls = F,
                          seed = 1, fdp.measure = "median", early.stop = F) {
 
   set.seed(seed)
@@ -52,6 +52,7 @@ plsko_tuning <- function(X, p_s = round(0.1 * ncol(X)), n_ko = 10, q = 0.05, par
     threshold.abs = quantile(unlist(abs(cor_mat)), prob = threshold.q, names = F)
   }
   else if(is.null(threshold.q) & is.null(threshold.abs)){
+    print("No threshold of neighbours provided. The default threshold.abs = 0 will be used.")
     threshold.abs = 0
   }
 
@@ -154,7 +155,7 @@ plot.plsko.tuning <- function(plsko.tuning, target.fdr = 0.05){
   full.result <- plsko.tuning$full
 
   full.result$ncomp <- as.factor(full.result$ncomp)
-  full.result$threshold.abs <- as.factor(full.result$threshold.abs)
+  full.result$threshold.abs <- as.factor(round(full.result$threshold.abs, digits = 3))
   full.result$sparsity <- as.factor(full.result$sparsity)
 
   fdp.boxplot <- ggplot(full.result, aes(x = ncomp, y = fdp, fill = threshold.abs)) +
