@@ -425,7 +425,7 @@ AKO_withW <- function(W.list, q = 0.05, offset = 0, gamma = 0.3, X.names = NULL)
 
   for (i in 1:n_ko) {
     pvals[,i] = empirical_pval(W.list[[i]], offset = offset)
-    S <- ko_withW(W.list[[i]], q = q, X.names = X.names)
+    S <- ko_withW(W.list[[i]], q = q, X.names = X.names, offset = offset)
     selected[[i]] <- S
   }
 
