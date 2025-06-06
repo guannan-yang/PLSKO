@@ -351,7 +351,7 @@ AKO_withKO <- function(X, Xko.list, y,
   aggregated_pval = apply(pvals, 1, quantile_aggregation, gamma=gamma)
   threshold = bhq_threshold(aggregated_pval, fdr=q)
   ako.s <- which(aggregated_pval <= threshold)
-  if(!is.null(X.names) & length(ako)!=0) names(ako.s) = X.names[ako.s]
+  if(!is.null(X.names) & length(ako.s)!=0) names(ako.s) = X.names[ako.s]
 
   result <- structure(list(call = match.call(),
                            selected = selected,
