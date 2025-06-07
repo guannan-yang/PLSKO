@@ -153,7 +153,7 @@ plsAKO <- function(X, y, n_ko = 25,
   }
 
     if(parallel){
-    para.result <- foreach::foreach(i = 1:n_ko, .packages = c('knockoff', 'progress')) %dopar% {
+    para.result <- foreach::foreach(i = 1:n_ko, .packages = c('knockoff', 'progress', 'PLSKO')) %dopar% {
           set.seed(seed + i-1)
           # Generate PLSKO knockoff
           ko = plsko(X, seed = seed+i-1, ...)
