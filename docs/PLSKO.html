@@ -2870,9 +2870,11 @@ using the following code:</p>
 <pre class="r"><code># install.packages(&quot;devtools&quot;)
 #devtools::install_github(&quot;guannan-yang/PLSKO/PLSKO&quot;, quiet = TRUE, upgrade = &quot;never&quot;)
 
-library(PLSKO)
-
-#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:
+library(PLSKO)</code></pre>
+<pre><code>#&gt; Registered S3 method overwritten by &#39;PLSKO&#39;:
+#&gt;   method                from    
+#&gt;   print.knockoff.result knockoff</code></pre>
+<pre class="r"><code>#If warnings of installing dependencies appears, please install the dependencies manually by running the following code:
 # install.packages(c(&quot;knockoff&quot;,&quot;progress&quot;, &quot;parallel&quot;, &quot;doParallel&quot;, &quot;foreach&quot;))
 #
 # if (!require(&quot;BiocManager&quot;, quietly = TRUE))
@@ -2939,7 +2941,7 @@ print(result)</code></pre>
 #&gt; plsko_filter(X = X, y = y)
 #&gt; 
 #&gt; Selected variables:
-#&gt; [1]   9  23  61  62  73  82 107 146</code></pre>
+#&gt; NULL</code></pre>
 <pre class="r"><code># compare with the true coefficients
 which(beta != 0)</code></pre>
 <pre><code>#&gt;  [1]   9  20  23  31  44  48  50  53  55  61  62  63  66  71  73  78  82  97 105
@@ -2987,9 +2989,9 @@ print(result)</code></pre>
 #&gt; plsko_filter(X = X, y = y, nb.list = nb.list)
 #&gt; 
 #&gt; Selected variables:
-#&gt;  [1]   9  23  50  53  54  63  73  82 107 118 121 146</code></pre>
+#&gt; [1]   9  23  73 107 146</code></pre>
 <pre class="r"><code>fdp(result)</code></pre>
-<pre><code>#&gt; [1] 0.08333333</code></pre>
+<pre><code>#&gt; [1] 0</code></pre>
 <pre class="r"><code># Option 2: define the neighbourhood as an adjacency matrix
 nb.mat = matrix(0, p, p)
 for(i in 1:p){
@@ -3009,9 +3011,9 @@ isSymmetric(nb.mat) # check if the matrix is symmetric</code></pre>
 #&gt; plsko_filter(X = X, y = y, nb.list = nb.mat)
 #&gt; 
 #&gt; Selected variables:
-#&gt;  [1]   9  23  50  53  54  63  73  82 107 118 121 146</code></pre>
+#&gt; [1]  23  61  73 146</code></pre>
 <pre class="r"><code>fdp(result)</code></pre>
-<pre><code>#&gt; [1] 0.08333333</code></pre>
+<pre><code>#&gt; [1] 0</code></pre>
 <p>These two options are equivalent, and you can choose the one that is
 more convenient for you. The result shows that the PLSKO method selected
 12 important variables with a FDP of 0.833, which is a little bit higher
@@ -3036,7 +3038,7 @@ print(result)</code></pre>
 #&gt; plsko_filter(X = X, y = y, ncomp = 3, sparsity = 0.95)
 #&gt; 
 #&gt; Selected variables:
-#&gt; [1]  61  62  82 107 146</code></pre>
+#&gt; [1]  55  61  62  73  82 107 121 146</code></pre>
 <pre class="r"><code>fdp(result)</code></pre>
 <pre><code>#&gt; [1] 0</code></pre>
 <p>We observed that the PLSKO method selected 5 important variables (out
@@ -3053,8 +3055,8 @@ without specifying, <code>plsko_filter</code> will automatically adjust
 the method based on the response type.</p>
 <pre class="r"><code># run the knockoff filter with default settings for binary response
 result = plsko_filter(X, y_bin)</code></pre>
-<pre><code>#&gt; Warning in ko_filter(X, Xk, y, q = q, method = method, offset = offset):
-#&gt; lasso.lcd is not applicable for categorical response variable, change to
+<pre><code>#&gt; Warning in ko_filter(X, Xk, y, covariates = covariates, q = q, method = method,
+#&gt; : lasso.lcd is not applicable for categorical response variable, change to
 #&gt; lasso.logistic</code></pre>
 <pre class="r"><code>print(result)</code></pre>
 <pre><code>#&gt; Call:
@@ -3146,12 +3148,12 @@ print(result)</code></pre>
 #&gt; plsko_filter(X = X, y = y)
 #&gt; 
 #&gt; Selected variables:
-#&gt;    HSPB1    TIMP3 SERPINE1   DIABLO SERPINE2     TFPI  ANGPTL4    GREM1 
-#&gt;        1        4       11       14       15       18       23       27 
-#&gt;      IL6      NOG 
-#&gt;       29       34</code></pre>
+#&gt;    HSPB1    TIMP3 SERPINE1   DIABLO SERPINE2     TFPI     DKK1  ANGPTL4 
+#&gt;        1        4       11       14       15       18       21       23 
+#&gt;    GREM1      IL6      NOG 
+#&gt;       27       29       34</code></pre>
 <pre class="r"><code>fdp(result)</code></pre>
-<pre><code>#&gt; [1] 0.2</code></pre>
+<pre><code>#&gt; [1] 0.2727273</code></pre>
 <p>The result shows that the PLSKO method selected 10 important
 variables with a FDP of 0.2 (all 8 true positive plus 2 false
 discoveries), higher than the default FDR level of 0.05. This might be
@@ -3282,12 +3284,14 @@ print(result_custom)</code></pre>
 #&gt; ko_filter(X = X, Xk = plsko_custom, y = y)
 #&gt; 
 #&gt; Selected variables:
-#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 
-#&gt;               1              14              34              39              43 
-#&gt; ENSG00000155966 ENSG00000169860 ENSG00000182158 
-#&gt;              51              59              68</code></pre>
+#&gt; ENSG00000003436 ENSG00000085382 ENSG00000088726 ENSG00000131873 ENSG00000136231 
+#&gt;               1              14              15              34              39 
+#&gt; ENSG00000137460 ENSG00000155966 ENSG00000164292 ENSG00000169860 ENSG00000173626 
+#&gt;              43              51              54              59              66 
+#&gt; ENSG00000182158 ENSG00000261371 
+#&gt;              68              81</code></pre>
 <pre class="r"><code>fdp(result_custom)</code></pre>
-<pre><code>#&gt; [1] 0</code></pre>
+<pre><code>#&gt; [1] 0.3333333</code></pre>
 <pre class="r"><code># calculate the importance scores and perform the knockoff filtering and variable selection with the customized settings and neighbourhood information
 result_custom_nb = ko_filter(X, plsko_custom_nb, y)
 print(result_custom_nb)</code></pre>
@@ -3297,10 +3301,10 @@ print(result_custom_nb)</code></pre>
 #&gt; Selected variables:
 #&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 
 #&gt;               1              14              34              39              43 
-#&gt; ENSG00000155966 ENSG00000169860 ENSG00000173626 ENSG00000182158 
-#&gt;              51              59              66              68</code></pre>
+#&gt; ENSG00000155966 ENSG00000169860 ENSG00000182158 
+#&gt;              51              59              68</code></pre>
 <pre class="r"><code>fdp(result_custom_nb)</code></pre>
-<pre><code>#&gt; [1] 0.1111111</code></pre>
+<pre><code>#&gt; [1] 0</code></pre>
 <pre class="r"><code># calculate the importance scores and perform the knockoff filtering and variable selection with the knockoff variables generated by the `knockoff` package
 result_ko_soa = ko_filter(X, ko_soa, y)
 print(result_ko_soa)</code></pre>
@@ -3308,12 +3312,14 @@ print(result_ko_soa)</code></pre>
 #&gt; ko_filter(X = X, Xk = ko_soa, y = y)
 #&gt; 
 #&gt; Selected variables:
-#&gt; ENSG00000003436 ENSG00000085382 ENSG00000131873 ENSG00000136231 ENSG00000137460 
-#&gt;               1              14              34              39              43 
-#&gt; ENSG00000155966 ENSG00000169860 ENSG00000173626 ENSG00000182158 
-#&gt;              51              59              66              68</code></pre>
+#&gt; ENSG00000003436 ENSG00000085382 ENSG00000088726 ENSG00000131873 ENSG00000134215 
+#&gt;               1              14              15              34              36 
+#&gt; ENSG00000136231 ENSG00000136261 ENSG00000137460 ENSG00000154429 ENSG00000155966 
+#&gt;              39              40              43              49              51 
+#&gt; ENSG00000164292 ENSG00000169860 ENSG00000173626 ENSG00000182158 ENSG00000261371 
+#&gt;              54              59              66              68              81</code></pre>
 <pre class="r"><code>fdp(result_ko_soa)</code></pre>
-<pre><code>#&gt; [1] 0.1111111</code></pre>
+<pre><code>#&gt; [1] 0.4666667</code></pre>
 <pre class="r"><code># Or you might have different options to calculate the importance scores
 result_default_rf &lt;- ko_filter(X, plsko_default, y, method = &quot;RF&quot;) # e.g. use random forest to calculate the importance scores
 print(result_default_rf)</code></pre>
@@ -3393,12 +3399,14 @@ print(result_ako)</code></pre>
 #&gt; AKO_withKO(X = X, Xko.list = plsko_list, y = y)
 #&gt; 
 #&gt; Selected variables (AKO):
-#&gt; ENSG00000076770 ENSG00000112419 ENSG00000112773 ENSG00000131149 
-#&gt;              11              24              25              33 
+#&gt; ENSG00000076770 ENSG00000112419 ENSG00000112773 ENSG00000131149 ENSG00000136929 
+#&gt;              11              24              25              33              42 
+#&gt; ENSG00000198517 
+#&gt;              75 
 #&gt; Frequency of selected variables from 15 iterations of single-run knockoffs:
 #&gt; 
-#&gt; 11 12 17 24 25 33 42 63 64 75 78 
-#&gt;  9  1  3 12 12 11  5  5  2  4  1</code></pre>
+#&gt;  7 11 12 17 24 25 33 42 63 64 75 78 
+#&gt;  1 10  1  4 13 13 11  7  5  3  6  1</code></pre>
 <p>The result shows that the PLS-AKO method selected 6 important genes
 related to pre-eclampsia.</p>
 <p>This function also allows you to bring your own knockoff variables,
@@ -3416,7 +3424,7 @@ print(result_ako_soa)</code></pre>
 #&gt; Frequency of selected variables from 15 iterations of single-run knockoffs:
 #&gt; 
 #&gt; 11 12 17 24 25 33 42 63 64 75 78 
-#&gt; 11  1  3 13 13 12  5  5  2  6  3</code></pre>
+#&gt; 10  1  3 13 13 12  4  4  1  6  2</code></pre>
 </div>
 <div id="step-3-multiple-knockoff-aggregation-with-customised-importance-scores" class="section level2" number="6.3">
 <h2><span class="header-section-number">6.3</span> Step 3: Multiple
@@ -3450,8 +3458,87 @@ print(result_ako_W)</code></pre>
 #&gt;  1  2  4  6  1  1  4  5  1  2</code></pre>
 </div>
 </div>
-<div id="conclusion" class="section level1" number="7">
-<h1><span class="header-section-number">7</span> Conclusion</h1>
+<div id="example-5-include-additional-covariates-in-your-knockoff-filtering-model" class="section level1" number="7">
+<h1><span class="header-section-number">7</span> Example 5: Include
+additional covariates in your knockoff filtering model</h1>
+<p>In this example, we show how to include additional covariates in the
+knockoff filtering model. For example, when looking for important genes
+related to a disease, we might want to include the age, BMI, smoking
+status and other potential confounders as covariates in the model to
+make the conclusion more robust.</p>
+<p>In knockoff filtering, this can be done by fitting the model on the
+augmented matrix of the predictors, the predictors’ knockoffs and the
+covariates.</p>
+<p>To include covariates in the knockoff filtering model, you can use
+the <code>plsko_filter</code>, <code>plsAKO</code>,
+<code>ko_filter</code> or <code>AKO_withKO</code> functions with the
+<code>covariates</code> argument. These functions will automatically
+adjust the importance scores based on the covariates. Currently our
+package implemented functions to calculate covariates-adjusted
+importance scores based on the coefficient differences from lasso
+regression (LCD) or other <code>glmnet</code> regression.</p>
+<p>Please note that the covariate variables should be continous or
+binary variables. If you have categorical covariates, you need to
+convert them to (p_conf - 1) dummy binary variables (e.g. using one-hot
+encoding) before using the functions.</p>
+<p>As we don’t have a real dataset with covariates, we will generate a
+synthetic datasets with covariates and show how to use the
+<code>PLSKO</code> package to include covariates in the knockoff
+filtering model.</p>
+<pre class="r"><code># generate a synthetic dataset with covariates
+set.seed(1)
+n = 100 # number of samples
+p = 100
+k = 10 # number of important variables with nonzeros coefficients
+a = 5 # coefficient for important variables
+
+p_conf = 5 # number of covariates
+
+X &lt;- MASS::mvrnorm(n, mu = rep(0, p), Sigma = toeplitz(0.5^(0:(p-1))))
+
+covariates &lt;- MASS::mvrnorm(n, mu = rep(0, p_conf), Sigma = diag(1, p_conf)) # generate covariates
+
+
+# generate a continuous response variable from a linear model of X and covariate variables
+nonzero = sample(1:p, k) # 19  70 100  51  59  81  52  91   3  55 
+beta = a * (1:p %in% nonzero) / sqrt(n)
+y = X %*% beta + covariates %*% rnorm(p_conf) + rnorm(n)</code></pre>
+<p>Now we have a synthetic dataset with 100 samples, 100 variables, and
+5 covariates (correlated with y).</p>
+<p>Let’s see the selected variables using the <code>plsAKO</code>
+function with or without the covariates included in the model.</p>
+<pre class="r"><code># run the PLSKO method without covariates
+result_no_cov = plsAKO(X, y, q = 0.05, n_ko = 25, ncomp = 3, threshold.q = 0.95)
+print(result_no_cov)</code></pre>
+<pre><code>#&gt; Call:
+#&gt; plsAKO(X = X, y = y, n_ko = 25, q = 0.05, ncomp = 3, threshold.q = 0.95)
+#&gt; 
+#&gt; Selected variables (AKO):
+#&gt; [1] 52
+#&gt; Frequency of selected variables from 25 iterations of single-run knockoffs:
+#&gt; 
+#&gt;  3 19 36 38 51 52 59 91 
+#&gt;  1  1  3  6  5  7  1  3</code></pre>
+<pre class="r"><code># run the PLSKO method with covariates
+result_with_cov = plsAKO(X, y, q = 0.05, n_ko = 25, ncomp = 3, threshold.q = 0.95, covariates = covariates)
+print(result_with_cov)</code></pre>
+<pre><code>#&gt; Call:
+#&gt; plsAKO(X = X, y = y, n_ko = 25, q = 0.05, covariates = covariates, 
+#&gt;     ncomp = 3, threshold.q = 0.95)
+#&gt; 
+#&gt; Selected variables (AKO):
+#&gt; [1]   3  19  51  52  55  59  70  91 100
+#&gt; Frequency of selected variables from 25 iterations of single-run knockoffs:
+#&gt; 
+#&gt;   3   4   5  18  19  24  28  34  51  52  53  55  59  70  81  86  91 100 
+#&gt;  24   3   1   6  24   1   4   1  22  20   1  20  21  20   3   1  24  19</code></pre>
+<p>We observed a dramatic power increase with the covariates included in
+the model, as the model are closer to the ‘true’ underlying relationship
+between X and y (i.e., y ~ X + covar), or say the y is ‘denoised’ by
+ajusting for the covariates.</p>
+</div>
+<div id="conclusion" class="section level1" number="8">
+<h1><span class="header-section-number">8</span> Conclusion</h1>
 <p>This vignette provides a comprehensive guide on how to use the
 <code>PLSKO</code> package to select important variables in
 high-dimensional biological data. The package provides functions to
@@ -3465,8 +3552,8 @@ functions and parameters can be found in the package documentation.</p>
 If you have any questions or feedback, please feel free to contact us or
 open an issue on the GitHub repository.</p>
 </div>
-<div id="session-info" class="section level1" number="8">
-<h1><span class="header-section-number">8</span> Session Info</h1>
+<div id="session-info" class="section level1" number="9">
+<h1><span class="header-section-number">9</span> Session Info</h1>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>#&gt; R version 4.3.0 (2023-04-21 ucrt)
 #&gt; Platform: x86_64-w64-mingw32/x64 (64-bit)
@@ -3476,7 +3563,7 @@ open an issue on the GitHub repository.</p>
 #&gt; 
 #&gt; 
 #&gt; locale:
-#&gt; [1] LC_COLLATE=C                       LC_CTYPE=English_Australia.utf8   
+#&gt; [1] LC_COLLATE=English_Australia.utf8  LC_CTYPE=English_Australia.utf8   
 #&gt; [3] LC_MONETARY=English_Australia.utf8 LC_NUMERIC=C                      
 #&gt; [5] LC_TIME=English_Australia.utf8    
 #&gt; 
@@ -3487,41 +3574,36 @@ open an issue on the GitHub repository.</p>
 #&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     
 #&gt; 
 #&gt; other attached packages:
-#&gt; [1] knockoff_0.3.6 glasso_1.11    PLSKO_0.1.0   
+#&gt; [1] knockoff_0.3.6 glasso_1.11    PLSKO_0.2.0   
 #&gt; 
 #&gt; loaded via a namespace (and not attached):
-#&gt;  [1] tidyselect_1.2.0    dplyr_1.1.3         fastmap_1.1.1      
-#&gt;  [4] promises_1.2.1      digest_0.6.33       mime_0.12          
-#&gt;  [7] lifecycle_1.0.4     ellipsis_0.3.2      survival_3.5-5     
-#&gt; [10] magrittr_2.0.3      compiler_4.3.0      sass_0.4.8         
-#&gt; [13] rlang_1.1.1         progress_1.2.3      tools_4.3.0        
-#&gt; [16] yaml_2.3.7          igraph_2.0.2        utf8_1.2.3         
-#&gt; [19] knitr_1.44          prettyunits_1.2.0   rARPACK_0.11-0     
-#&gt; [22] htmlwidgets_1.6.4   pkgbuild_1.4.3      plyr_1.8.9         
-#&gt; [25] xml2_1.3.6          RColorBrewer_1.1-3  pkgload_1.3.4      
-#&gt; [28] BiocParallel_1.34.2 miniUI_0.1.1.1      withr_3.0.0        
-#&gt; [31] purrr_1.0.2         desc_1.4.3          Rdsdp_1.0.5.2.1    
-#&gt; [34] grid_4.3.0          fansi_1.0.5         roxygen2_7.3.1     
-#&gt; [37] urlchecker_1.0.1    profvis_0.3.8       xtable_1.8-4       
-#&gt; [40] colorspace_2.1-0    ggplot2_3.4.3       scales_1.3.0       
-#&gt; [43] iterators_1.0.14    MASS_7.3-58.4       cli_3.6.1          
-#&gt; [46] ellipse_0.5.0       rmarkdown_2.25      crayon_1.5.2       
-#&gt; [49] generics_0.1.3      remotes_2.4.2.1     rstudioapi_0.15.0  
-#&gt; [52] RSpectra_0.16-1     reshape2_1.4.4      sessioninfo_1.2.2  
-#&gt; [55] cachem_1.0.8        stringr_1.5.1       splines_4.3.0      
-#&gt; [58] parallel_4.3.0      matrixStats_1.0.0   vctrs_0.6.3        
-#&gt; [61] devtools_2.4.5      glmnet_4.1-8        Matrix_1.6-1.1     
-#&gt; [64] jsonlite_1.8.8      hms_1.1.3           ggrepel_0.9.3      
-#&gt; [67] foreach_1.5.2       jquerylib_0.1.4     tidyr_1.3.0        
-#&gt; [70] glue_1.6.2          codetools_0.2-19    mixOmics_6.25.1    
-#&gt; [73] stringi_1.7.12      gtable_0.3.4        shape_1.4.6.1      
-#&gt; [76] later_1.3.2         munsell_0.5.0       tibble_3.2.1       
-#&gt; [79] pillar_1.9.0        htmltools_0.5.7     R6_2.5.1           
-#&gt; [82] doParallel_1.0.17   rprojroot_2.0.4     evaluate_0.23      
-#&gt; [85] shiny_1.8.0         lattice_0.21-8      memoise_2.0.1      
-#&gt; [88] bslib_0.6.1         corpcor_1.6.10      httpuv_1.6.14      
-#&gt; [91] Rcpp_1.0.11         gridExtra_2.3       xfun_0.40          
-#&gt; [94] fs_1.6.3            usethis_2.2.3       pkgconfig_2.0.3</code></pre>
+#&gt;  [1] gtable_0.3.6        ellipse_0.5.0       shape_1.4.6.1      
+#&gt;  [4] xfun_0.50           bslib_0.9.0         ggplot2_3.5.1      
+#&gt;  [7] ggrepel_0.9.6       rstatix_0.7.2       lattice_0.22-6     
+#&gt; [10] vctrs_0.6.5         tools_4.3.0         generics_0.1.3     
+#&gt; [13] parallel_4.3.0      tibble_3.2.1        rARPACK_0.11-0     
+#&gt; [16] pkgconfig_2.0.3     Matrix_1.6-1.1      RColorBrewer_1.1-3 
+#&gt; [19] mixOmics_6.26.0     lifecycle_1.0.4     stringr_1.5.1      
+#&gt; [22] compiler_4.3.0      progress_1.2.3      Rdsdp_1.0.5.2.1    
+#&gt; [25] munsell_0.5.1       codetools_0.2-20    carData_3.0-5      
+#&gt; [28] htmltools_0.5.8.1   sass_0.4.9          yaml_2.3.10        
+#&gt; [31] glmnet_4.1-8        Formula_1.2-5       pillar_1.10.1      
+#&gt; [34] car_3.1-3           ggpubr_0.6.0        crayon_1.5.3       
+#&gt; [37] jquerylib_0.1.4     tidyr_1.3.1         MASS_7.3-58.4      
+#&gt; [40] BiocParallel_1.36.0 cachem_1.1.0        iterators_1.0.14   
+#&gt; [43] abind_1.4-8         foreach_1.5.2       RSpectra_0.16-2    
+#&gt; [46] pls_2.8-5           tidyselect_1.2.1    digest_0.6.37      
+#&gt; [49] stringi_1.8.4       reshape2_1.4.4      dplyr_1.1.4        
+#&gt; [52] purrr_1.0.2         splines_4.3.0       fastmap_1.2.0      
+#&gt; [55] grid_4.3.0          colorspace_2.1-1    cli_3.6.3          
+#&gt; [58] magrittr_2.0.3      survival_3.8-3      broom_1.0.7        
+#&gt; [61] corpcor_1.6.10      prettyunits_1.2.0   scales_1.3.0       
+#&gt; [64] backports_1.5.0     rmarkdown_2.29      matrixStats_1.5.0  
+#&gt; [67] igraph_2.1.4        gridExtra_2.3       ggsignif_0.6.4     
+#&gt; [70] hms_1.1.3           evaluate_1.0.3      knitr_1.49         
+#&gt; [73] doParallel_1.0.17   rlang_1.1.5         Rcpp_1.0.14        
+#&gt; [76] glue_1.8.0          rstudioapi_0.17.1   jsonlite_1.8.9     
+#&gt; [79] plyr_1.8.9          R6_2.5.1</code></pre>
 </div>
 
 
