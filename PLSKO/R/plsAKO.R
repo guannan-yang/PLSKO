@@ -15,6 +15,7 @@
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
 #' @param w.method A character string specifying the method to compute feature importance statistics. Default is \code{"lasso.lcd"}. Other options include \code{"lasso.logistic"} for binary response variable, \code{"lasso.max.lambda"} for the maximum lambda value for the first entry on the path, and \code{"RF"} for random forest. See \code{\link{ko_filter}} or \code{\link{knockoff::knockoff.filter}} for more details.
 #' @param gamma A numeric value between 0 and 1 for the quantile aggregation parameter. Default is 0.3.
+#' @param covariates Optional. A numeric matrix or dataframe of covariates to be included in the lasso regression. Default is \code{NULL} (no covariates).
 #' @param parallel Logical value indicating whether to run the process in parallel. Default is \code{TRUE}.
 #' @param ncores An integer specifying the number of cores to use for parallel processing. Default is NULL, which uses all available cores except one.
 #' @param seed An integer to set the random seed for reproducibility. Default is 1.
@@ -85,7 +86,7 @@
 #' @export
 #'
 plsAKO <- function(X, y, n_ko = 25,
-                q = 0.05, offset = 0, w.method = "lasso.lcd",
+                q = 0.05, offset = 0, w.method = "lasso.lcd", covariates = NULL,
                 gamma = 0.3, parallel = T, ncores = NULL, seed = 1, ...){
 
   #Input type validation
@@ -159,7 +160,7 @@ plsAKO <- function(X, y, n_ko = 25,
           ko = plsko(X, seed = seed+i-1, ...)
 
           # Calculate the apply knokcoff filter
-          S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method, cores = 1)
+          S <- ko_filter(X = X, Xk = ko, y = y, covariates = covariates, q = q, w.method = w.method, cores = 1)
 
           pvals = empirical_pval(S$statistic, offset = offset)
 
@@ -220,6 +221,7 @@ plsAKO <- function(X, y, n_ko = 25,
 #' @param X A \eqn{n \times p} numeric matrix or data frame of predictors.
 #' @param Xko.list A list of knockoff variable matrices (\eqn{n \times p}) corresponding to the original matrix \code{X}.
 #' @param y A numeric or factor response vector of length \eqn{n}.
+#' @param covariates Optional. A numeric matrix or data frame of covariates to be included in the lasso regression. Default is \code{NULL} (no covariates).
 #' @param q A numeric value of the target false discovery rate (FDR) level. Default is \eqn{0.05}.
 #' @param w.method A string specifying the method to compute test statistics. Options are \code{"lasso.lcd"}, \code{"lasso.logistic"}, \code{"lasso.max.lambda"}, \code{"RF"}. Default is \code{"lasso.lcd"}.
 #' @param offset An integer (0 or 1) specifying the offset in the empirical p-value calculation. Default is \eqn{0} (liberally control modified FDR with higher power). Other options include \eqn{1}, similar to "knockoffs+", yielding a slightly more conservative procedure that controls the FDR according to the usual definition.
@@ -262,7 +264,7 @@ plsAKO <- function(X, y, n_ko = 25,
 #' @export
 #'
 # AKO with generated knockoff sets as a list
-AKO_withKO <- function(X, Xko.list, y,
+AKO_withKO <- function(X, Xko.list, y, covariates = NULL,
                        q = 0.05,  w.method = "lasso.lcd", offset = 0,
                        gamma = 0.3, seed = 1, parallel = T, ncores = NULL){
 
@@ -341,7 +343,7 @@ AKO_withKO <- function(X, Xko.list, y,
     selected <- list()
     for (i in 1:n_ko) {
       ko <- Xko.list[[i]]
-      S <- ko_filter(X = X, Xk = ko, y = y, q = q, w.method = w.method)
+      S <- ko_filter(X = X, Xk = ko, y = y, covariates = covariates, q = q, w.method = w.method)
       pvals[,i] = empirical_pval(S$statistic, offset = offset)
       selected[[i]] <- S
     }

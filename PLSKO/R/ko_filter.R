@@ -59,7 +59,7 @@
 #' print(result.bin)
 #'
 #' @export
-ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...){
+ko_filter <- function(X, Xk, y, q = 0.05, w.method = "lasso.lcd", covariates = NULL, offset = 0, ...){
 
   n = nrow(X)
   p = ncol(X)
@@ -101,9 +101,14 @@ ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...
     warning('lasso.logistic is not applicable for continuous response variable, change to lasso.lcd')
     w.method = "lasso.lcd"
   }
+  if(!is.null(covariates) && !w.method %in% c("lasso.lcd", "lasso.logistic")){
+    warning('Covariates are only implemented for lasso.lcd and lasso.logistic, ignoring covariates input. Please generate your custermised W.')
+  }
+  
+  
 
   if(w.method == "lasso.lcd"){
-    W <- stat.lasso_coefdiff(X, Xk, y, ...)
+    W <- stat.glmnet_coefdiff(X, Xk, y, covariates = covariates, ...)
   }
   else if(w.method == "lasso.max.lambda"){
     W <- stat.lasso_lambdadiff(X, Xk, y, ...)
@@ -125,7 +130,7 @@ ko_filter <- function(X, Xk, y, q = 0.05,w.method = "lasso.lcd", offset = 0, ...
   # }
 
   else if(w.method == "lasso.logistic"){ # exclude when continuous y design
-    W <- stat.lasso_coefdiff_bin(X, Xk, y, ...)
+    W <- stat.glmnet_coefdiff(X, Xk, y, covariates = covariates, family = "binomial", ...)
   }
 
   else if(w.method == "RF"){

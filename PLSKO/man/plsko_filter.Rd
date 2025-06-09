@@ -16,7 +16,8 @@ plsko_filter(
   ncomp = NULL,
   sparsity = 1,
   rmax = 5,
-  seed = 1
+  seed = 1,
+  simpls = F
 )
 }
 \arguments{
@@ -43,6 +44,8 @@ plsko_filter(
 \item{rmax}{An integer specifying the maximum number of factors to consider when \code{ncomp} is not defined. Default is 5.}
 
 \item{seed}{An integer seed for reproducibility. Default is 1.}
+
+\item{simpls}{A logical value indicating whether to use the SIMPLS algorithm for PLS regression. Default is FALSE. SIMPLS is faster but not applicable for sparse-PLS regression.}
 }
 \value{
 An object of class "knockoff.result". This object is a list containing at least the following components:

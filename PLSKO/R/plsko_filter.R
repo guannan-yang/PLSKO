@@ -4,6 +4,7 @@
 #' @param X A numeric matrix or data frame of predictors.
 #' @param y A numeric vector or factor of responses.
 #' @param q A numeric value specifying the false discovery rate (FDR) level. Default is `0.05`.
+#' @param covariates A numeric matrix or data frame of covariates to adjust for in the knockoff procedure. Default is `NULL`, meaning no covariates are used.
 #' @param method A string specifying the method to compute test statistics. Options are `"lasso.lcd"`, `"lasso.logistic"`, `"lasso.max.lambda"`, `"RF"`. Default is `"lasso.lcd"`.
 #' @param offset A numeric or string value to adjust the knockoff threshold. Default is `0` (control modifed FDR). Other options include `1` (yields a slightly more conservative procedure ("knockoffs+") that controls the FDR according to the usual definition) and `"both"` (returns results from both "knockoffs" and "knockoffs+").
 #' @param nb.list Optional. A list of length \eqn{p} or adjacency matrix of \eqn{p \times p} that defines the neighbourship of variables. A list of length \eqn{p} should include the neighbours' index of each variable from \eqn{X_1} to \eqn{X_p} in order; The \eqn{i^{th}} element in the list includes the indices of the neighbour variables of \eqn{X_i}, or \code{NULL} when no neighbours. A adjacency matrix should be symmetric with only binary element and  where \eqn{M_{ij} = 1} when \eqn{X_i} and \eqn{X_j} is defined as neighbours; otherwise \eqn{M_{ij} = 0} when not neighbour or on diagonal (i.e. \eqn{i = j}). If not provided or NULL, the neighborhoods are determined based on correlations.
@@ -72,13 +73,13 @@
 #' which(beta != 0)
 #'
 #'
-plsko_filter <- function(X, y, q = 0.05, method = "lasso.lcd", offset = 0,
+plsko_filter <- function(X, y, q = 0.05, method = "lasso.lcd", offset = 0, covariates = NULL,
                          nb.list = NULL, threshold.abs = NULL, threshold.q = NULL, ncomp = NULL, sparsity = 1, rmax = 5,
                          seed = 1, simpls = F
                          ){
   set.seed(seed)
   Xk= plsko(X, nb.list = nb.list, threshold.abs = threshold.abs, threshold.q = threshold.q, ncomp = ncomp, sparsity = sparsity, rmax = rmax, simpls = simpls)
-  result = ko_filter(X, Xk, y, q = q, method = method, offset = offset)
+  result = ko_filter(X, Xk, y, covariates = covariates, q = q, method = method, offset = offset)
 
   # restructure the result
   result$call <- match.call()

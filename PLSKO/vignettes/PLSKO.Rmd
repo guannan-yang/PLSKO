@@ -415,6 +415,56 @@ result_ako_W = AKO_withW(W_list, q = 0.05)
 print(result_ako_W)
 ```
 
+# Example 5: Include additional covariates in your knockoff filtering model
+In this example, we show how to include additional covariates in the knockoff filtering model. For example, when looking for important genes related to a disease, we might want to include the age, BMI, smoking status and other potential confounders as covariates in the model to make the conclusion more robust. 
+
+In knockoff filtering, this can be done by fitting the model on the augmented matrix of the predictors, the predictors' knockoffs and the covariates. 
+
+To include covariates in the knockoff filtering model, you can use the `plsko_filter`, `plsAKO`, `ko_filter` or `AKO_withKO` functions with the `covariates` argument. These functions will automatically adjust the importance scores based on the covariates. Currently our package implemented functions to calculate covariates-adjusted importance scores based on the coefficient differences from lasso regression (LCD) or other `glmnet` regression. 
+
+Please note that the covariate variables should be continous or binary variables. If you have categorical covariates, you need to convert them to (p_conf - 1) dummy binary variables (e.g. using one-hot encoding) before using the functions.
+
+As we don't have a real dataset with covariates, we will generate a synthetic datasets with covariates and show how to use the `PLSKO` package to include covariates in the knockoff filtering model. 
+
+```{r eg5_covariates}
+# generate a synthetic dataset with covariates
+set.seed(1)
+n = 100 # number of samples
+p = 100
+k = 10 # number of important variables with nonzeros coefficients
+a = 5 # coefficient for important variables
+
+p_conf = 5 # number of covariates
+
+X <- MASS::mvrnorm(n, mu = rep(0, p), Sigma = toeplitz(0.5^(0:(p-1))))
+
+covariates <- MASS::mvrnorm(n, mu = rep(0, p_conf), Sigma = diag(1, p_conf)) # generate covariates
+
+
+# generate a continuous response variable from a linear model of X and covariate variables
+nonzero = sample(1:p, k)
+beta = a * (1:p %in% nonzero) / sqrt(n)
+y = X %*% beta + covariates %*% rnorm(p_conf) + rnorm(n)
+
+```
+ 
+Now we have a synthetic dataset with 100 samples, 100 variables, and 5 covariates (correlated with y). 
+
+Let's see the selected variables using the `plsAKO` function with or without the covariates included in the model. 
+```{r eg5_covariates_plsko_filter}
+# run the PLSKO method without covariates
+result_no_cov = plsAKO(X, y, q = 0.05, n_ko = 25, ncomp = 3, threshold.q = 0.95)
+print(result_no_cov)
+
+```
+
+```{r eg5_covariates_plsko_filter_cov}
+# run the PLSKO method with covariates
+result_with_cov = plsAKO(X, y, q = 0.05, n_ko = 25, ncomp = 3, threshold.q = 0.95, covariates = covariates)
+print(result_with_cov)
+```
+We observed a dramatic power increase with the covariates included in the model, as the model are closer to the 'true' underlying relationship between X and y (i.e., y ~ X + covar), or say the y is 'denoised' by ajusting for the covariates.
+
 # Conclusion
 This vignette provides a comprehensive guide on how to use the `PLSKO` package to select important variables in high-dimensional biological data. The package provides functions to generate the knockoff variables, calculate the importance scores, and perform the knockoff filtering and variable selection. The package is designed to be user-friendly and flexible, allowing users to easily apply the PLSKO method to their own data. More details about the functions and parameters can be found in the package documentation.
 

@@ -12,8 +12,8 @@ plsko_tuning(
   parallel = TRUE,
   ncore = NULL,
   ncomp = seq(3, 9, 2),
-  threshold.q = 0,
-  threshold.abs = 0,
+  threshold.q = NULL,
+  threshold.abs = NULL,
   sparsity = 1,
   simpls = F,
   seed = 1,
@@ -36,9 +36,9 @@ plsko_tuning(
 
 \item{ncomp}{A integer or a vector of integers to be tested, specifying the number of components to be used in PLSKO. Default is seq(3, 9, 2).}
 
-\item{threshold.q}{A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying a quantile threshold to define neighborhoods. Default is 0. This parameter will be used if threshold.abs is not provided.}
+\item{threshold.q}{A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying a quantile threshold to define neighborhoods. Default is NULL. This parameter will be used if threshold.abs is not provided.}
 
-\item{threshold.abs}{A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying an absolute correlation threshold to define neighborhoods. Default is 0.}
+\item{threshold.abs}{A numeric value or a vector of numeric values (between 0 - 1) to be tested, specifying an absolute correlation threshold to define neighborhoods. Default is NULL.}
 
 \item{sparsity}{A numeric value or a vector of numeric values (between 0 (excluded) - 1) to be tested, specifying the sparsity level in the PLS regression. Default is 1.}
 

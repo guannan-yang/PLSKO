@@ -33,7 +33,7 @@ plsko(
 
 \item{seed}{An integer seed for reproducibility. Default is 1.}
 
-\item{simpls}{Optional. A logical value indicating whether to use the SIMPLS algorithm for PLS regression. Default is FALSE. SIMPLS is faster but}
+\item{simpls}{Optional. A logical value indicating whether to use the SIMPLS algorithm for PLS regression. Default is FALSE. SIMPLS is faster but not applicable for sparse-PLS regression.}
 }
 \value{
 A matrix of generated knockoff variables of \eqn{n \times p}
