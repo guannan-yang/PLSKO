@@ -1,6 +1,6 @@
 
 # PLSKO
-R package and source codes used in paper, 'PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection'(https://www.biorxiv.org/content/10.1101/2024.08.06.606935v1)
+R package and source codes used in paper, 'PLSKO: a robust knockoff generator to control false discovery rate in omics variable selection'(https://academic.oup.com/bioinformatics/article/41/9/btaf475/8244280)
 
 <img src="https://github.com/guannan-yang/PLSKO/blob/main/docs/plsko.png" width=25% height=25%>
 
