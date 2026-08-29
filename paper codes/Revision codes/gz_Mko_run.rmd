@@ -1,0 +1,605 @@
+---
+title: "PLSKO minor revision"
+author: "Guannan Yang"
+date: "2025-05-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dpi = 100, 
+                      echo=F, 
+                      warning=F, message=F, eval = TRUE,
+                      fig.show=TRUE, fig.width= 5,fig.height= 5, out.width = '50%', fig.ncol = 1, fig.path= 'Figures/')
+
+setwd(".")
+
+library(tidyverse)
+library(mixOmics)
+library(knockoff)
+require(glmnet)
+require(graphics)
+library(reshape2)
+library(rARPACK)
+library(doParallel)
+library(foreach)
+library(ggpubr)
+library(CVXR)
+library(PLSKO)
+library(ggrepel)
+
+
+source.path <- ""
+
+source(paste0(source.path, "data_sim1.R"))
+source(paste0(source.path, "DGPX.R"))
+source(paste0(source.path, 'plsko_multi.R'))
+
+source("multi_ko_filter.R")
+source("multi_ko_gen.R")
+
+source("gz.R")
+source("generate_statistics.R")
+
+#check how many cores are available
+
+getDoParWorkers()
+
+
+```
+
+# Test on multi_plsko and other multi knockoffs based on Gimenez and Zou
+```{r}
+
+# generate X and Y
+set.seed(123)
+
+multi_sim <- function(n, X.method = "AR1", p.in.cluster = 100, p.indep = 0, cluster = 1, rho = 0.5, r.in.cluster = 3, fac.load = c(1,2), x.noise = 1,
+                            s = 0.1, a = c(3,5), y.dis = "Normal", y.noise = 0, q = 0.05,
+                            plsko.threshold.q = 0.8, plsko.ncomp = r.in.cluster, 
+                            seed = Sys.time(), call.var = "seed"){
+  
+  set.seed(seed)
+  
+  GX <- DGPX.gauss(n, X.method = X.method, p.in.cluster = p.in.cluster, p.indep = p.indep, cluster = cluster, 
+                   rho = rho, r.in.cluster = r.in.cluster, load = fac.load, noise = x.noise, seed = seed)
+  X <- GX$X
+  X <- scale(X, center = F)
+  
+  p <- ncol(X)
+  s = ceiling(s*p)
+  Gy <- DGPy.AR1(X, s = s, A = a, c = y.noise, y.dis = "Normal")
+  y <- Gy$y
+  
+  plsko.1 <- plsko.multi(X, threshold.q = plsko.threshold.q, ncomp = plsko.ncomp, M.ko = 1)
+  plsko.2 <- plsko.multi(X, threshold.q = plsko.threshold.q, ncomp = plsko.ncomp, M.ko = 2)
+  plsko.3 <- plsko.multi(X, threshold.q = plsko.threshold.q, ncomp = plsko.ncomp, M.ko = 3)
+  
+  sdp.1 <- multiple_knockoff_Gaussian(X, num_knockoff = 1, Sigma = GX$cov, type = "sdp")
+  sdp.2 <- multiple_knockoff_Gaussian(X, num_knockoff = 2, Sigma = GX$cov, type = "sdp")
+  sdp.3 <- multiple_knockoff_Gaussian(X, num_knockoff = 3, Sigma = GX$cov, type = "sdp")
+  
+  mvr.1 <- multiple_knockoff_Gaussian(X, num_knockoff = 1, Sigma = GX$cov, type = "mvr")
+  mvr.2 <- multiple_knockoff_Gaussian(X, num_knockoff = 2, Sigma = GX$cov, type = "mvr")
+  mvr.3 <- multiple_knockoff_Gaussian(X, num_knockoff = 3, Sigma = GX$cov, type = "mvr")
+  
+  S.plsko.1 <- ko_filter(X, plsko.1$X_k.list[[1]], y = y, q =q, method = "lasso.lcd", offset = 1)
+  S.plsko.2 <- cheapko_filter(X, plsko.2$X_k.list, y = y, q =q)
+  S.plsko.3 <- cheapko_filter(X, plsko.3$X_k.list, y = y, q =q)
+
+  S.sdp.1 <- ko_filter(X, sdp.1$X_k, y = y, q =q, method = "lasso.lcd", offset = 1)
+  S.sdp.2 <- cheapko_filter(X, sdp.2$X_k, y = y, q =q)
+  S.sdp.3 <- cheapko_filter(X, sdp.3$X_k, y = y, q =q)
+  
+  S.mvr.1 <- ko_filter(X, mvr.1$X_k, y = y, q =q, method = "lasso.lcd", offset = 1)
+  S.mvr.2 <- cheapko_filter(X, mvr.2$X_k, y = y, q =q)
+  S.mvr.3 <- cheapko_filter(X, mvr.3$X_k, y = y, q =q)
+  
+  S <- list(plsko.1 = S.plsko.1,
+            plsko.2 = S.plsko.2,
+            plsko.3 = S.plsko.3,
+            sdp.1 = S.sdp.1,
+            sdp.2 = S.sdp.2,
+            sdp.3 = S.sdp.3,
+            mvr.1 = S.mvr.1,
+            mvr.2 = S.mvr.2,
+            mvr.3 = S.mvr.3)
+
+  runtime <- c(plsko.1= plsko.1$run.time,
+               plsko.2 = plsko.2$run.time,
+               plsko.3 = plsko.3$run.time,
+               sdp.1 = sdp.1$run.time,
+               sdp.2 = sdp.2$run.time,
+               sdp.3 = sdp.3$run.time,
+               mvr.1 = mvr.1$run.time,
+               mvr.2 = mvr.2$run.time,
+               mvr.3 = mvr.3$run.time)
+  
+  fdr <- lapply(S, function(s){fdr = fdr(s$selected, Gy$Beta)})
+  names(fdr) <- names(S)
+  power <- lapply(S, function(s){pow = pow(s$selected, Gy$Beta)})
+  names(power) <- names(S)
+
+  
+  # call.var
+  call <- mget(call.var)
+  call <- paste(unlist(call), collapse = ",")
+  
+  
+  result <- data.frame(ko.method = names(S),
+                       var = unlist(call),
+                       fdp = unlist(fdr),
+                       tpp = unlist(power),
+                       runtime = runtime)
+  
+  
+  return(result)
+  #return(list(S, fdr, power))
+}
+```
+
+```{r run sim s ar1}
+
+cl <- makeCluster(26)
+registerDoParallel(cl)
+
+it = 50
+
+multi_s_ar1 <- foreach(i = rep(1:it,4), S = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow")) %dopar%{
+                     res <- multi_sim(n = 250, X.method = "AR1", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, 
+                                            x.noise = 1, rho = 0.5, s = S,
+                                      plsko.threshold.q = 0.95, plsko.ncomp = 3, call.var = "s")
+                   }
+multi_s_df <- do.call("rbind",multi_s_ar1)
+multi_s_df$ko.method <- factor(multi_s_df$ko.method, 
+                                    levels = c("plsko.1","sdp.1","mvr.1",
+                                               "plsko.2", "sdp.2", "mvr.2",
+                                               "plsko.3", "sdp.3", "mvr.3"))
+saveRDS(multi_s_df, "multi_s_df.rds")
+
+```
+
+```{r colour scheme}
+# assign colours to methods
+colors <- c("#1f77b4", "#aec7e8", "#6699CC",
+            
+            "#ff7f0e", "#ffbb78", "#ff9896", "#9467bd", "#c5b0d5", "#8c564b", "#98df8a")
+names(colors) <- levels(multi_s_df$ko.method)
+colors
+```
+
+
+```{r plot sim s ar1}
+multi_s_df <- readRDS("multi_s_df.rds")
+multi_plsako_ar1_df <- readRDS("multi_plsako_ar1_df.rds")
+multi_plsako_ar1_df$sparsity <- as.factor(multi_plsako_ar1_df$var)
+multi_s_df <- rbind(multi_s_df, multi_plsako_ar1_df)
+multi_s_df$sparsity <- as.factor(multi_s_df$var)
+
+multi_s_ar1_fdr.plot <- ggplot(mapping = aes(x = sparsity, y = fdp), data = multi_s_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+ theme_light()
+multi_s_ar1_fdr.plot
+
+multi_s_ar1_pow.plot <- ggplot(mapping = aes(x = sparsity, y = tpp), data = multi_s_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  theme(legend.position = "top")+ theme_light()
+multi_s_ar1_pow.plot
+
+multi_s_ar1_time.plot <- ggplot(mapping = aes(x = sparsity, y = as.numeric(runtime)), data = multi_s_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+  #stat_summary(aes(group= ko.method, colour= ko.method), fun.y="mean", geom="line", position_dodge(width=0.25)) +
+  theme(legend.position = "top")+ theme_light()
+multi_s_ar1_time.plot
+```
+
+```{r run sim s fac2}
+
+cl <- makeCluster(26)
+registerDoParallel(cl)
+
+it = 50
+
+multi_s_fac2 <- foreach(i = rep(1:it,4), S = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow")) %dopar%{
+                     res <- multi_sim(n = 250, X.method = "fac2", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, 
+                                            x.noise = 1, s = S,
+                                      plsko.threshold.q = 0.8, plsko.ncomp = 3, call.var = "s")
+                   }
+multi_s_fac2_df <- do.call("rbind",multi_s_fac2)
+multi_s_fac2_df$ko.method <- factor(multi_s_fac2_df$ko.method, 
+                                    levels = c("plsko.1","sdp.1","mvr.1",
+                                               "plsko.2", "sdp.2", "mvr.2",
+                                               "plsko.3", "sdp.3", "mvr.3"))
+saveRDS(multi_s_fac2_df, "multi_s_fac2_df.rds")
+
+```
+
+```{r plot sim s fac2}
+
+multi_s_fac2_df$sparsity <- as.factor(multi_s_fac2_df$var)
+multi_plsako_fac2_df <- readRDS("multi_plsako_fac2_df.rds")
+multi_plsako_fac2_df$sparsity <- as.factor(multi_plsako_fac2_df$var)
+multi_s_fac2_df <- rbind(multi_s_fac2_df, multi_plsako_fac2_df)
+
+
+multi_s_fac2_fdr.plot <- ggplot(mapping = aes(x = sparsity, y = fdp), data = multi_s_fac2_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+ theme_light()
+multi_s_fac2_fdr.plot
+
+multi_s_fac2_pow.plot <- ggplot(mapping = aes(x = sparsity, y = tpp), data = multi_s_fac2_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  theme(legend.position = "top")+ theme_light()
+multi_s_fac2_pow.plot
+
+
+```
+### run plsAKO sim
+```{r run plsako sim}
+plsako_sim <- function(n, X.method = "AR1", p.in.cluster = 100, p.indep = 0, cluster = 1, rho = 0.5, r.in.cluster = 3, fac.load = c(1,2), x.noise = 1,
+                            s = 0.1, a = c(3,5), y.dis = "Normal", y.noise = 0, q = 0.05,
+                            plsko.threshold.q = 0.8, plsko.ncomp = r.in.cluster, n_ko = 25,
+                            seed = Sys.time(), call.var = "seed"){
+  
+  set.seed(seed)
+  
+  GX <- DGPX.gauss(n, X.method = X.method, p.in.cluster = p.in.cluster, p.indep = p.indep, cluster = cluster, 
+                   rho = rho, r.in.cluster = r.in.cluster, load = fac.load, noise = x.noise, seed = seed)
+  X <- GX$X
+  X <- scale(X, center = F)
+  
+  p <- ncol(X)
+  s = ceiling(s*p)
+  Gy <- DGPy.AR1(X, s = s, A = a, c = y.noise, y.dis = "Normal")
+  y <- Gy$y
+  
+  start.time <- Sys.time()
+  plsko.list <- lapply(1:n_ko, function(i){
+    plsko(X, threshold.q = plsko.threshold.q, ncomp = plsko.ncomp)
+  })
+  
+  S <- list()
+  S$plsAKO <- AKO_withKO(X, plsko.list, y = y, q = q, offset = 0, parallel = F)
+
+  runtime <- Sys.time() - start.time
+  
+  fdr <- lapply(S, function(s){fdr(s$ako.s, Gy$Beta)})
+  names(fdr) <- names(S)
+  power <- lapply(S, function(s){pow(s$ako.s, Gy$Beta)})
+  names(power) <- names(S)
+
+  
+  # call.var
+  call <- mget(call.var)
+  call <- paste(unlist(call), collapse = ",")
+  
+  
+  result <- data.frame(ko.method = names(S),
+                       var = unlist(call),
+                       fdp = unlist(fdr),
+                       tpp = unlist(power),
+                       runtime = runtime)
+  
+  
+  return(result)
+}
+
+```
+
+```{r run plsako sim s ar1}
+cl <- makeCluster(26)
+registerDoParallel(cl)
+it = 50
+multi_plsako_ar1 <- foreach(i = rep(1:it,4), S = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow"), .errorhandling = "pass") %dopar%{
+                     res <- plsako_sim(n = 250, X.method = "AR1", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i,  x.noise = 1, rho = 0.5, s = S, plsko.threshold.q = 0.95, plsko.ncomp = 3, call.var = "s", n_ko = 25)
+                   }
+multi_plsako_ar1_df <- do.call("rbind",multi_plsako_ar1)
+multi_plsako_ar1_df$ko.method <- factor(multi_plsako_ar1_df$ko.method, 
+                                    levels = c("plsAKO"))
+saveRDS(multi_plsako_ar1_df, "multi_plsako_ar1_df.rds")
+#```
+
+#```{r run plsako sim s fac2}
+
+multi_plsko_fac2 <- foreach(i = rep(1:it,4), S = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow"), .errorhandling = "pass") %dopar%{
+                     res <- plsako_sim(n = 250, X.method = "fac2", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, x.noise = 1, s = S, plsko.threshold.q = 0.8, plsko.ncomp = 3, call.var = "s", n_ko = 25)
+                   }
+multi_plsako_fac2_df <- do.call("rbind",multi_plsko_fac2)
+multi_plsako_fac2_df$ko.method <- factor(multi_plsako_fac2_df$ko.method, 
+                                    levels = c("plsAKO"))
+saveRDS(multi_plsako_fac2_df, "multi_plsako_fac2_df.rds")
+#```
+
+#```{r plsako sim s ar1 n 150}
+# run plsAKO sim with n = 150
+multi_plsko_ar1_n150 <- foreach(i = rep(1:it,4), S = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow"), .errorhandling = "pass") %dopar%{
+                     res <- plsako_sim(n = 150, X.method = "AR1", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, x.noise = 1, rho = 0.5, s = S, plsko.threshold.q = 0.95, plsko.ncomp = 3, call.var = "s", n_ko = 25)
+                   }
+multi_plsako_ar1_n150_df <- do.call("rbind",multi_plsko_ar1_n150)
+multi_plsako_ar1_n150_df$ko.method <- factor(multi_plsako_ar1_n150_df$ko.method, 
+                                    levels = c("plsAKO"))
+saveRDS(multi_plsako_ar1_n150_df, "multi_plsako_ar1_n150_df.rds")
+#```
+
+#```{r plsako sim s fac2 n 150}
+# run plsAKO sim with n = 150
+multi_plsko_fac2_n150 <- foreach(i = rep(1:it,4), S = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow"), .errorhandling = "pass") %dopar%{
+                     res <- plsako_sim(n = 150, X.method = "fac2", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, x.noise = 1, s = S, plsko.threshold.q = 0.8, plsko.ncomp = 3, call.var = "s", n_ko = 25)
+                   }
+multi_plsako_fac2_n150_df <- do.call("rbind",multi_plsko_fac2_n150)
+multi_plsako_fac2_n150_df$ko.method <- factor(multi_plsako_fac2_n150_df$ko.method, 
+                                    levels = c("plsAKO"))
+saveRDS(multi_plsako_fac2_n150_df, "multi_plsako_fac2_n150_df.rds")
+```
+
+## n = 150
+
+```{r}
+
+cl <- makeCluster(26)
+registerDoParallel(cl)
+
+it = 50
+
+multi_s_n150 <- foreach(i = rep(1:it,4), s = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow")) %dopar%{
+                     res <- multi_sim(n = 150, X.method = "AR1", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, x.noise = 1, rho = 0.5, plsko.threshold.q = 0.95, plsko.ncomp = 3, s = s, call.var = "s")
+                   }
+
+multi_s_n150_df <- do.call("rbind",multi_s_n150)
+multi_s_n150_df$ko.method <- factor(multi_s_n150_df$ko.method, 
+                                    levels = c("plsko.1", "plsko.2", "plsko.3",
+                                               "sdp.1", "sdp.2", "sdp.3",
+                                               "mvr.1", "mvr.2", "mvr.3"))
+saveRDS(multi_s_n150_df, "multi_s_n150_df.rds")
+
+
+multi_s_n150_fac2 <- foreach(i = rep(1:it,4), s = rep(c(0.05, 0.075, 0.1, 0.2), each = it),
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow")) %dopar%{
+                     res <- multi_sim(n = 150, X.method = "fac2", y.noise = 0, p.in.cluster = 50, cluster = 5, seed = i, x.noise = 1, plsko.threshold.q = 0.8, plsko.ncomp = 3, s = s, call.var = "s")
+                   }
+multi_s_n150_fac2_df <- do.call("rbind",multi_s_n150_fac2)
+multi_s_n150_fac2_df$ko.method <- factor(multi_s_n150_fac2_df$ko.method, 
+                                    levels = c("plsko.1","sdp.1","mvr.1",
+                                               "plsko.2", "sdp.2", "mvr.2",
+                                               "plsko.3", "sdp.3", "mvr.3"))
+saveRDS(multi_s_n150_fac2_df, "multi_s_n150_fac2_df.rds")
+```
+
+```{r plot sim s n150}
+multi_s_n150_df <- readRDS("multi_s_n150_df.rds")
+multi_s_n150_df$sparsity <- as.factor(multi_s_n150_df$var)
+multi_plsako_ar1_n150_df <- readRDS("multi_plsako_ar1_n150_df.rds")
+multi_plsako_ar1_n150_df$sparsity <- as.factor(multi_plsako_ar1_n150_df$var)
+
+multi_s_n150_df <- rbind(multi_s_n150_df, multi_plsako_ar1_n150_df)
+
+
+multi_s_n150_fdr.plot <- ggplot(mapping = aes(x = sparsity, y = fdp), data = multi_s_n150_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+ theme_light()
+multi_s_n150_fdr.plot
+
+multi_s_n150_pow.plot <- ggplot(mapping = aes(x = sparsity, y = tpp), data = multi_s_n150_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  theme(legend.position = "top")+ theme_light()
+multi_s_n150_pow.plot
+
+
+#=================
+multi_s_n150_fac2_df <- readRDS("multi_s_n150_fac2_df.rds")
+multi_plsako_fac2_n150_df <- readRDS("multi_plsako_fac2_n150_df.rds")
+multi_plsako_fac2_n150_df$sparsity <- as.factor(multi_plsako_fac2_n150_df$var)
+multi_s_n150_fac2_df <- rbind(multi_s_n150_fac2_df, multi_plsako_fac2_n150_df)
+
+multi_s_n150_fac2_df$sparsity <- as.factor(multi_s_n150_fac2_df$var)
+multi_s_n150_fac2_fdr.plot <- ggplot(mapping = aes(x = sparsity, y = fdp), data = multi_s_n150_fac2_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  scale_y_continuous(breaks = c(0,0.05,0.1,0.2,0.4,0.6,0.8,1))+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.05, linetype="dashed", color = "red")+ theme_light()
+multi_s_n150_fac2_fdr.plot
+
+multi_s_n150_fac2_pow.plot <- ggplot(mapping = aes(x = sparsity, y = tpp), data = multi_s_n150_fac2_df)+
+  geom_boxplot(aes(fill = ko.method))+
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+    stat_summary(aes(group= ko.method, colour = ko.method), fun.y="mean", geom="line", position = position_dodge(width=0.75))+
+  theme(legend.position = "top")+ theme_light()
+multi_s_n150_fac2_pow.plot
+
+```
+
+### Generate combined plots
+```{r}
+library(ggpubr)
+## combine 
+multi_s_ar1_fac2_fdr_pow.plot <- ggarrange(multi_s_ar1_fdr.plot, multi_s_ar1_pow.plot,
+                                           multi_s_fac2_fdr.plot, multi_s_fac2_pow.plot,
+                                       ncol = 2, nrow = 2, 
+                                       labels = c("AR1(0.5)", "", "Factor Model", ""),
+                                       label.y = 1.1, font.label = list(size = 8, face = "plain"),
+                                       common.legend = TRUE, legend = "top")
+
+
+## save as png
+png("C:/Users/guannany/OneDrive - The University of Melbourne/PhD/plsko_writing/minor Revision/multi_n500_s.png", width = 4000, height = 2500, units = "px", res = 600)
+multi_s_ar1_fac2_fdr_pow.plot
+dev.off()
+
+multi_s_ar1_fac2_fdr_pow_n150.plot <- ggarrange(multi_s_n150_fdr.plot, multi_s_n150_pow.plot,
+                                           multi_s_n150_fac2_fdr.plot, multi_s_n150_fac2_pow.plot,
+                                       ncol = 2, nrow = 2, 
+                                       labels = c("AR1(0.5)", "", "Factor Model", ""),
+                                       label.y = 1.1, font.label = list(size = 8, face = "plain"),
+                                       common.legend = TRUE, legend = "top")
+## save as png
+png("C:/Users/guannany/OneDrive - The University of Melbourne/PhD/plsko_writing/minor Revision/multi_n150_s.png", width = 4000, height = 2500, units = "px", res = 600)
+multi_s_ar1_fac2_fdr_pow_n150.plot
+dev.off()
+
+```
+
+
+
+## cfRNA case
+
+```{r apply to real data}
+data("cfRNA_placenta")
+
+X <- cfRNA_placenta$counts
+y <- cfRNA_placenta$metadata$PE
+
+it = 25
+
+cfRNA_multi <- foreach(i = 1:it, 
+                   .packages = c("mixOmics", "tidyverse", "knockoff", "CVglasso","rARPACK", "irlba", "PLSKO", "CVXR"),
+                   .export = c("fdr", "pow")) %dopar%{
+                     set.seed(i)
+                     cfRNA_ko <- plsko.multi(X, threshold.abs = 0.3, ncomp = 7, M.ko = 3)
+                     cfRNA_select <- cheapko_filter(X, cfRNA_ko$X_k.list, y = y, q = 0.05, family = "binomial", offset = 0)
+                     cfRNA_select_plus <- cheapko_filter(X, cfRNA_ko$X_k.list, y = y, q = 0.05, family = "binomial", offset = 1)
+                     cfRNA_select_single_plus <- cheapko_filter(X, cfRNA_ko$X_k.list[[1]], y = y, q = 0.05, family = "binomial", offset = 1)
+                     cfRNA_select_single <- cheapko_filter(X, cfRNA_ko$X_k.list[[1]], y = y, q = 0.05, family = "binomial", offset = 0)
+                     list(cfRNA_select = cfRNA_select, # selected set on 3 knockoffs, offset = 0
+                          cfRNA_select_plus = cfRNA_select_plus, # selected set on 3 knockoffs, offset = 1
+                          cfRNA_select_single = cfRNA_select_single, # selected set on 1 knockoff, offset = 0
+                          cfRNA_select_single_plus = cfRNA_select_single_plus) # selected set on 1 knockoff, offset = 1
+                   }
+saveRDS(cfRNA_multi, "cfRNA_multi.rds")
+
+```
+
+```{r plot cfRNA}
+cfRNA_multi <- readRDS("cfRNA_multi.rds")
+
+# the frequency of selected genes
+cfRNA_select_3ko_offset0 <- lapply(cfRNA_multi, function(x){x$cfRNA_select$selected})
+cfRNA_select_3ko_offset1 <- lapply(cfRNA_multi, function(x){x$cfRNA_select_plus$selected})
+cfRNA_select_1ko_offset0 <- lapply(cfRNA_multi, function(x){x$cfRNA_select_single$selected})
+cfRNA_select_1ko_offset1 <- lapply(cfRNA_multi, function(x){x$cfRNA_select_single_plus$selected})
+
+
+cfRNA_select_3ko_offset0_freq <- table(unlist(cfRNA_select_3ko_offset0))
+cfRNA_select_3ko_offset1_freq <- table(unlist(cfRNA_select_3ko_offset1))
+cfRNA_select_1ko_offset1_freq <- table(unlist(cfRNA_select_1ko_offset1))
+cfRNA_select_1ko_offset0_freq <- table(unlist(cfRNA_select_1ko_offset0))
+
+cfRNA_select_3ko_offset0_tau <- lapply(cfRNA_multi, function(x){x$cfRNA_select$tau})
+cfRNA_select_3ko_offset1_tau <- lapply(cfRNA_multi, function(x){x$cfRNA_select_plus$tau})
+cfRNA_select_1ko_offset1_tau <- lapply(cfRNA_multi, function(x){x$cfRNA_select_single_plus$tau})
+cfRNA_select_1ko_offset0_tau <- lapply(cfRNA_multi, function(x){x$cfRNA_select_single$tau})
+
+cfRNA_select_3ko_offset0_AKO <- AKO_withW(cfRNA_select_3ko_offset0_tau)
+cfRNA_select_3ko_offset1_AKO <- AKO_withW(cfRNA_select_3ko_offset1_tau) #same result as no affect on tau
+cfRNA_select_1ko_offset1_AKO <- AKO_withW(cfRNA_select_1ko_offset1_tau)
+cfRNA_select_1ko_offset0_AKO <- AKO_withW(cfRNA_select_1ko_offset0_tau)
+
+cfRNA.colnames <- colnames(cfRNA_placenta$counts)
+```
+
+Selected result from 3 knockoffs, offset = 0:
+```{r}
+cfRNA_select_3ko_offset0_freq
+cfRNA_select_3ko_offset0_AKO$ako.s
+
+cfRNA.colnames[cfRNA_select_3ko_offset0_AKO$ako.s]
+```
+
+Selected result from 3 knockoffs, offset = 1:
+```{r}
+cfRNA_select_3ko_offset1_freq
+cfRNA_select_3ko_offset1_AKO$ako.s
+
+cfRNA.colnames[cfRNA_select_3ko_offset1_AKO$ako.s]
+
+```
+
+Selected result from 1 knockoff, offset = 0:
+```{r}
+cfRNA_select_1ko_offset0_freq
+cfRNA_select_1ko_offset0_AKO$ako.s
+
+cfRNA.colnames[cfRNA_select_1ko_offset0_AKO$ako.s]
+```
+
+Selected result from 1 knockoff, offset = 1:
+```{r}
+cfRNA_select_1ko_offset1_freq
+cfRNA_select_1ko_offset1_AKO$ako.s
+
+cfRNA.colnames[cfRNA_select_1ko_offset1_AKO$ako.s]
+```
+
+
+```{r}
+# summerise the results in a table: gene index, gene number, frequency of 3ko_offset1, indicator of whether selected by 3ko_offset1 + ako, freq of 3ko_offset0, ako indicator,  freq of 1ko_offset1, ako indicator, freq of 1ko_offset0, ako indicator
+# note these columns have different length, so get the union, if not selected, the value will be 0
+
+cfRNA_select_union <- data.frame(gene = union(union(union(names(cfRNA_select_3ko_offset1_freq), names(cfRNA_select_3ko_offset0_freq)),
+                                 names(cfRNA_select_1ko_offset1_freq)), names(cfRNA_select_1ko_offset0_freq)))
+
+cfRNA_multi_summary <- data.frame(gene = cfRNA_select_union$gene,
+                                  gene.names = colnames(cfRNA_placenta$counts)[as.numeric(cfRNA_select_union$gene)],
+                                 freq_3ko_offset1 = ifelse(cfRNA_select_union$gene %in% names(cfRNA_select_3ko_offset1_freq), 
+                                                            cfRNA_select_3ko_offset1_freq[cfRNA_select_union$gene], 0),
+                                 ako_3ko_offset1 = cfRNA_select_union$gene %in% as.character(cfRNA_select_3ko_offset1_AKO$ako.s),
+                                 freq_3ko_offset0 = ifelse(cfRNA_select_union$gene %in% names(cfRNA_select_3ko_offset0_freq), 
+                                                            cfRNA_select_3ko_offset0_freq[cfRNA_select_union$gene], 0),
+                                 ako_3ko_offset0 = cfRNA_select_union$gene %in% as.character(cfRNA_select_3ko_offset0_AKO$ako.s),
+                                 freq_1ko_offset1 = ifelse(cfRNA_select_union$gene %in% names(cfRNA_select_1ko_offset1_freq), 
+                                                            cfRNA_select_1ko_offset1_freq[cfRNA_select_union$gene], 0),
+                                 ako_1ko_offset1 = cfRNA_select_union$gene %in% as.character(cfRNA_select_1ko_offset1_AKO$ako.s),
+                                 freq_1ko_offset0 = ifelse(cfRNA_select_union$gene %in% names(cfRNA_select_1ko_offset0_freq), 
+                                                            cfRNA_select_1ko_offset0_freq[cfRNA_select_union$gene], 0),
+                                 ako_1ko_offset0 = cfRNA_select_union$gene %in% as.character(cfRNA_select_1ko_offset0_AKO$ako.s))
+
+# filter out genes that are not selected by any method more than 2 times
+cfRNA_multi_summary <- cfRNA_multi_summary[cfRNA_multi_summary$freq_3ko_offset1 > 2 | cfRNA_multi_summary$freq_3ko_offset0 > 2 |
+                                             cfRNA_multi_summary$freq_1ko_offset1 > 2 | cfRNA_multi_summary$freq_1ko_offset0 > 2,]
+
+write.csv(cfRNA_multi_summary, "cfRNA_multi_summary.csv", row.names = FALSE)
+```
+

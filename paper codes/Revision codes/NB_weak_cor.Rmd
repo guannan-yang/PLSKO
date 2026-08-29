@@ -1,0 +1,536 @@
+---
+title: "PLSKO Major Revision"
+author: "Guannan Yang"
+date: "2025-02-06"
+output: html_document
+date: "2024-12-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dpi = 100, 
+                      echo=F, 
+                      warning=F, message=F, eval = TRUE,
+                      fig.show=TRUE, fig.width= 5,fig.height= 5, out.width = '50%', fig.ncol = 1, fig.path= 'Figures/')
+
+setwd(".")
+
+library(edgeR)
+library(limma)
+library(tidyverse)
+library(mixOmics)
+library(knockoff)
+require(glmnet)
+require(graphics)
+library(reshape2)
+library(rARPACK)
+library(doParallel)
+library(foreach)
+library(ggpubr)
+
+source.path <- ""
+
+source(paste0(source.path, "data_sim1.R"))
+source(paste0(source.path, 'KOBT/create.pc.knockoff.R'))
+source(paste0(source.path, 'hdko.R'))
+
+#check how many cores are available
+getDoParWorkers()
+
+cl <- makeCluster(26)
+registerDoParallel(cl)
+```
+
+## Simulation on weak correlation
+Robustness on violation of the independence assumption outside the neibourghhood block.
+We tested on X with block multivariate guassian design, block factor design and block quandratic factor design.
+```{r equi_correlation ,eval=F}
+rho1 <- 0.7 # correlation within the block
+rho2 <- c(0, 0.2, 0.4) # correlation outside the block
+
+n <- 300 # number of samples
+p_b <- 100 # number of variables in the block
+blocks <- 5 # number of variables in each block
+
+it <- 100 # number of iterations
+
+
+
+equi_rho2_res <- foreach(seed = rep(1:it,length(rho2)), rho2 = rep(rho2, each = it), .packages = c("knockoff", "PLSKO")) %dopar% {
+  set.seed(seed)
+  # Generate the correlation matrix with block-equicorrelation structure
+  Sigma <- matrix(0, p_b*blocks, p_b*blocks)
+  for (i in 1:blocks){
+    for (j in 1:blocks){
+      if (i == j){
+        Sigma[((i-1)*p_b+1):(i*p_b),(((j-1)*p_b+1):(j*p_b))] <- rho1
+      } else {
+        Sigma[(((i-1)*p_b+1):(i*p_b)), (((j-1)*p_b+1):(j*p_b))] <- rho2
+      }
+    }
+  }
+  diag(Sigma) <- 1
+  # Generate the data
+  X <- MASS::mvrnorm(n, rep(0, p_b*blocks), Sigma)
+
+    # Run the plsko_tuning function
+  res <- plsko_tuning(X, p_s = 50, q = 0.05, n_ko = 1, ncomp = 3, threshold.abs = seq(0.1, 0.9, 0.1), parallel = F, simpls = F, sparsity = 1, seed = seed)
+    return(res)
+}
+
+
+saveRDS(equi_rho2_res, "equi_rho2_res.rds")
+
+```
+
+```{r equi_correlation_plot}
+equi_rho2_res <- readRDS("equi_rho2_res.rds")
+names(equi_rho2_res) <- rep(rho2, each = it)
+equi_rho2 <- do.call(rbind, lapply(equi_rho2_res, function(x) x$full))
+
+# for each rho2, draw the boxplot of the FDR, grouping by the threshold.abs
+equi_rho2$rho2 <- as.factor(rep(rho2, each = it * 9))
+equi_rho2$threshold.abs <- as.factor(equi_rho2$threshold.abs)
+
+fdp_rho2 <- ggplot(equi_rho2, aes(x = threshold.abs, y = fdp)) +
+            geom_boxplot() +
+            facet_wrap(~rho2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = rho2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Equi-correlation structure: rho1 = 0.7",
+                 x = "Threshold.abs",
+                 y = "FDP") +
+            theme_minimal()
+
+tpp_rho2 <- ggplot(equi_rho2, aes(x = threshold.abs, y = tpp, group = threshold.abs)) +
+            geom_boxplot() +
+            facet_wrap(~rho2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = rho2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Equi-correlation structure: rho1 = 0.7",
+                 x = "Threshold.abs",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_rho2, tpp_rho2, ncol = 2)
+
+fdp_plus_rho2 <- ggplot(equi_rho2, aes(x = threshold.abs, y = fdp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~rho2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = rho2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Equi-correlation structure: rho1 = 0.7",
+                 x = "Threshold.abs",
+                 y = "FDP") +
+            theme_minimal()
+tpp_plus_rho2 <- ggplot(equi_rho2, aes(x = threshold.abs, y = tpp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~rho2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = rho2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Equi-correlation structure: rho1 = 0.7",
+                 x = "Threshold.abs",
+                 y = "TPP") +
+            theme_minimal()
+ggarrange(fdp_plus_rho2, tpp_plus_rho2, ncol = 2)
+```
+
+```{r weak factor, eval=F}
+
+# generate block factor variables where the correlation is weak outside the block -- by smaller loading
+n = 300
+p_b = 100 # number of variables in the block
+blocks = 5
+r_b = 3 # number of factors in each block
+
+lam1 <- c(3, 5)
+lam2 <- list(lam1*0, lam1*0.3^2, lam1*0.5^2)
+
+it = 100
+
+fac_rho2_res <- foreach(seed = rep(1:it, each = length(lam2)), lam2 = rep(lam2, it), .packages = c("knockoff", "PLSKO")) %dopar% {
+   set.seed(seed)
+   fac <- matrix(rnorm(n*r_b*blocks, sd = 1), nrow = n, ncol = r_b*blocks)
+   lam <- matrix(0, p_b*blocks, r_b*blocks)
+
+   for(i in 1:blocks){
+     lam[((i-1)*p_b+1):(i*p_b), ((i-1)*r_b+1):(i*r_b)] <- matrix(runif(p_b*r_b, min = lam1[1], max = lam1[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+     lam[((i-1)*p_b+1):(i*p_b), -(((i-1)*r_b+1):(i*r_b))] <- matrix(runif(p_b*r_b, min = lam2[1], max = lam2[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+   }
+
+   X <- fac %*% t(lam) + matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks) 
+
+  # Run the plsko_tuning function
+  res <- plsko_tuning(X, p_s = 50, q = 0.05, n_ko = 1, ncomp = 3, threshold.q = seq(0, 0.9, 0.1), threshold.abs = NULL, parallel = F, simpls = F, sparsity = 1, seed = seed)
+  res$lam2 = lam2
+    return(res)
+}
+
+saveRDS(fac_rho2_res, "fac_rho2.rds")
+
+```
+
+```{r weak_factor_plot}
+fac_rho2_res <- readRDS("fac_rho2.rds")
+fac_rho2 <- do.call(rbind, lapply(fac_rho2_res, function(x){
+  x$full$lam2 <- paste0("~U(", paste(x$lam2, collapse = ", "), ")" )
+  return(x$full)
+}))
+
+# for each lam2, draw the boxplot of the FDR, grouping by the threshold.abs
+fac_rho2$lam2 <- as.factor(fac_rho2$lam2)
+fac_rho2$threshold.q <- rep(1-seq(0, 0.9, 0.1), it * 3)
+fac_rho2$threshold.q <- as.factor(fac_rho2$threshold.q)
+
+fdp_fac_lam2 <- ggplot(fac_rho2, aes(x = threshold.q, y = fdp)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.q (quantile of correlations)",
+                 y = "FDR") +
+            theme_minimal()
+tpp_fac_lam2 <- ggplot(fac_rho2, aes(x = threshold.q, y = tpp)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak factor structure: lam1 = c(3, 5)",
+                 x = "Threshold.q (quantile of correlations)",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_fac_lam2, tpp_fac_lam2, ncol = 2)
+
+# time
+time_fac_lam2 <- ggplot(fac_rho2, aes(x = threshold.q, y = run.time)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.q (quantile of correlations)",
+                 y = "Time") +
+            theme_minimal()
+
+
+fdp_plus_fac_lam2 <- ggplot(fac_rho2, aes(x = threshold.q, y = fdp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.q (quantile of correlations)",
+                 y = "FDP") +
+            theme_minimal()
+tpp_plus_fac_lam2 <- ggplot(fac_rho2, aes(x = threshold.q, y = tpp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.q (quantile of correlations)",
+                 y = "TPP") +
+            theme_minimal()
+ggarrange(fdp_plus_fac_lam2, tpp_plus_fac_lam2, ncol = 2)
+```
+
+```{r weak_quadratic_factor}
+# generate block factor variables where the correlation is weak outside the block -- by smaller loading
+n = 500
+p_b = 100 # number of variables in the block
+blocks = 5
+r_b = 3 # number of factors in each block
+
+lam1 <- c(3, 5)
+lam2 <- list(lam1*0, lam1*0.3^2, lam1*0.5^2)
+
+it = 100
+
+
+fac_quad_rho2_res <- foreach(seed = rep(1:it,each = 3), lam2 = rep(lam2, it), .packages = c("knockoff", "PLSKO"), .errorhandling = "pass") %dopar% {
+  tryCatch({
+   set.seed(seed)
+   p_b <- 50 # Half of the variables are quadratic
+   fac <- matrix(rnorm(n*r_b*blocks, sd = 1), nrow = n, ncol = r_b*blocks)
+   lam <- matrix(0, p_b*blocks, r_b*blocks)
+
+   for(i in 1:blocks){
+     lam[((i-1)*p_b+1):(i*p_b), ((i-1)*r_b+1):(i*r_b)] <- matrix(runif(p_b*r_b, min = lam1[1], max = lam1[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+     lam[((i-1)*p_b+1):(i*p_b), -(((i-1)*r_b+1):(i*r_b))] <- matrix(runif(p_b*r_b, min = lam2[1], max = lam2[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+   }
+
+   X_1 <- fac %*% t(lam)+ matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks)
+   X_2 <- (fac %*% t(lam))^2 + matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks)
+   # Prevent memory issues
+  gc()
+   X <- cbind(X_1, X_2)
+   colnames(X) <- paste0("X", 1:ncol(X))
+   
+    #Run the plsko_tuning function
+    res <- plsko_tuning(scale(X), p_s = 50, q = 0.05, n_ko = 1, ncomp = 12, threshold.q = seq(0, 0.9, 0.1), threshold.abs = NULL, parallel = F, simpls = F, sparsity = 1, seed = seed)
+    res$lam2 = paste0("c(", paste(lam2, collapse = ", "), ")" )
+  
+   return(res)
+  }, error = function(e) list(error = e$message))
+}
+
+saveRDS(fac_quad_rho2_res, "fac_quad_rho2_res.rds")
+```
+
+```{r weak_quadratic_factor_plot}
+
+fac_quad_rho2_res <- readRDS("fac_quad_rho2_res.rds")
+fac_quad_rho2 <- do.call(rbind, lapply(fac_quad_rho2_res, function(x){
+  if (!is.null(x)){
+    x$full$lam2 <- paste0("c(", paste(x$lam2, collapse = ", "), ")" )
+    return(x$full)
+  }
+}))
+
+
+# for each lam2, draw the boxplot of the FDR, grouping by the threshold.abs
+fac_quad_rho2$lam2 <- as.factor(fac_quad_rho2$lam2)
+fac_quad_rho2$threshold.q <- rep(1-seq(0.1, 1, 0.1), 297)
+fac_quad_rho2$threshold.q <- as.factor(fac_quad_rho2$threshold.q)
+
+fdp_fac_quad_lam2 <- ggplot(fac_quad_rho2, aes(x = threshold.q, y = fdp)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak quadratic factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.abs",
+                 y = "FDR") +
+            theme_minimal()
+
+tpp_fac_quad_lam2 <- ggplot(fac_quad_rho2, aes(x = threshold.q, y = tpp)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak quadratic factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.abs",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_fac_quad_lam2, tpp_fac_quad_lam2, ncol = 2)
+
+fdp_plus_quad_fac_lam2 <- ggplot(fac_quad_rho2, aes(x = threshold.q, y = fdp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak quadratic factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.abs",
+                 y = "FDP") +
+            theme_minimal()
+
+tpp_plus_quad_fac_lam2 <- ggplot(fac_quad_rho2, aes(x = threshold.q, y = tpp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak quadratic factor structure: lam1 ~ U(3, 5)",
+                 x = "Threshold.abs",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_plus_quad_fac_lam2, tpp_plus_quad_fac_lam2, ncol = 2)
+```
+
+```{r weak_quadratic_factor_lam1c12}
+# generate block factor variables where the correlation is weak outside the block -- by smaller loading
+n = 500
+p_b = 100 # number of variables in the block
+blocks = 5
+r_b = 3 # number of factors in each block
+
+lam1 <- c(1, 2) # smaller loading, weaker correlation
+lam2 <- list(lam1*0, lam1*0.3^2, lam1*0.5^2)
+
+it = 100
+
+
+fac_quad_rho2_res2 <- foreach(seed = rep(1:it,each = 3), lam2 = rep(lam2, it), .packages = c("knockoff", "PLSKO"), .errorhandling = "pass") %dopar% {
+  tryCatch({
+   set.seed(seed)
+   p_b <- 50 # Half of the variables are quadratic
+   fac <- matrix(rnorm(n*r_b*blocks, sd = 1), nrow = n, ncol = r_b*blocks)
+   lam <- matrix(0, p_b*blocks, r_b*blocks)
+
+   for(i in 1:blocks){
+     lam[((i-1)*p_b+1):(i*p_b), ((i-1)*r_b+1):(i*r_b)] <- matrix(runif(p_b*r_b, min = lam1[1], max = lam1[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+     lam[((i-1)*p_b+1):(i*p_b), -(((i-1)*r_b+1):(i*r_b))] <- matrix(runif(p_b*r_b, min = lam2[1], max = lam2[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+   }
+
+   X_1 <- fac %*% t(lam)+ matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks)
+   X_2 <- (fac %*% t(lam))^2 + matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks)
+   # Prevent memory issues
+  gc()
+   X <- cbind(X_1, X_2)
+   colnames(X) <- paste0("X", 1:ncol(X))
+   
+    #Run the plsko_tuning function
+    res <- plsko_tuning(scale(X), p_s = 50, q = 0.05, n_ko = 1, ncomp = 12, threshold.q = seq(0, 0.9, 0.1), threshold.abs = NULL, parallel = F, simpls = F, sparsity = 1, seed = seed)
+    res$lam2 = paste0("c(", paste(lam2, collapse = ", "), ")" )
+  
+   return(res)
+  }, error = function(e) list(error = e$message))
+}
+
+saveRDS(fac_quad_rho2_res2, "fac_quad_rho2_res2.rds")
+```
+
+```{r weak_quadratic_factor_lam1c12_plot}
+fac_quad_rho2_res2 <- readRDS("fac_quad_rho2_res2.rds")
+fac_quad_rho2_2 <- do.call(rbind, lapply(fac_quad_rho2_res2, function(x){
+  if (!is.null(x)){
+    x$full$lam2 <- as.factor(x$lam2)
+    return(x$full)
+  }
+}))
+
+# for each lam2, draw the boxplot of the FDR, grouping by the threshold.abs
+fac_quad_rho2_2$lam2 <- as.factor(fac_quad_rho2_2$lam2)
+fac_quad_rho2_2$threshold.q <- rep(1-seq(0.1, 1, 0.1), 300)
+fac_quad_rho2_2$threshold.q <- as.factor(fac_quad_rho2_2$threshold.q)
+
+fdp_fac_quad_lam2_2 <- ggplot(fac_quad_rho2_2, aes(x = threshold.q, y = fdp)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak quadratic factor structure: lam1 = c(1, 2)",
+                 x = "Threshold.abs",
+                 y = "FDR") +
+            theme_minimal()
+
+tpp_fac_quad_lam2_2 <- ggplot(fac_quad_rho2_2, aes(x = threshold.q, y = tpp)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak quadratic factor structure: lam1 = c(1, 2)",
+                 x = "Threshold.abs",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_fac_quad_lam2_2, tpp_fac_quad_lam2_2, ncol = 2)
+
+fdp_plus_quad_fac_lam2_2 <- ggplot(fac_quad_rho2_2, aes(x = threshold.q, y = fdp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak quadratic factor structure: lam1 ~U (1, 2)",
+                 x = "Threshold.q",
+                 y = "FDP") +
+            theme_minimal()
+
+tpp_plus_quad_fac_lam2_2 <- ggplot(fac_quad_rho2_2, aes(x = threshold.q, y = tpp.plus)) +
+            geom_boxplot() +
+            facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = lam2), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak quadratic factor structure: lam1 ~U (1, 2)",
+                 x = "Threshold.q",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_plus_quad_fac_lam2_2, tpp_plus_quad_fac_lam2_2, ncol = 2)
+```
+
+```{r quad with nblist}
+# generate neigbhour list with true block structure: block 1: 1-50 and 251-300; block 2: 51-100 and 301-350; block 3: 101-150 and 351-400; block 4: 151-200 and 401-450; block 5: 201-250 and 451-500
+nb.list <- matrix(0, 500, 500)
+for (i in 1:blocks){
+  nb.list[((i-1)*50+1):(i*50), ((i-1)*50+1):(i*50)] <- 1
+  nb.list[((i-1)*50+1):(i*50), ((i-1)*50+250):(i*50+250)] <- 1
+  nb.list[((i-1)*50+250):(i*50+250), ((i-1)*50+1):(i*50)] <- 1
+  nb.list[((i-1)*50+250):(i*50+250), ((i-1)*50+250):(i*50+250)] <- 1
+}
+
+fac_quad_rho2_nb_res <- foreach(seed = rep(1:it,each = 3), lam2 = rep(lam2, it), .packages = c("knockoff", "PLSKO"), .errorhandling = "pass") %dopar% {
+  #tryCatch({
+  source.path <- "C:/Users/guannany/OneDrive - The University of Melbourne/PhD/vitual_desk/Sim2/RSource/"
+  source(paste0(source.path, "data_sim1.R"))
+   set.seed(seed)
+   p_b <- 50 # Half of the variables are quadratic
+   fac <- matrix(rnorm(n*r_b*blocks, sd = 1), nrow = n, ncol = r_b*blocks)
+   lam <- matrix(0, p_b*blocks, r_b*blocks)
+
+   for(i in 1:blocks){
+     lam[((i-1)*p_b+1):(i*p_b), ((i-1)*r_b+1):(i*r_b)] <- matrix(runif(p_b*r_b, min = lam1[1], max = lam1[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+     lam[((i-1)*p_b+1):(i*p_b), -(((i-1)*r_b+1):(i*r_b))] <- matrix(runif(p_b*r_b, min = lam2[1], max = lam2[2]), p_b, r_b) * matrix(sample(c(-1, 1), p_b*r_b, replace = T), p_b, r_b)
+   }
+
+   X_1 <- fac %*% t(lam)+ matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks)
+   X_2 <- (fac %*% t(lam))^2 + matrix(rnorm(n*p_b*blocks, sd = 1), n, p_b*blocks)
+
+   X <- cbind(X_1, X_2)
+   colnames(X) <- paste0("X", 1:ncol(X))
+   
+  #generate y
+   y = DGPy.AR1(scale(X), s = 50, A = c(3, 5))
+    #Run the plsko_filter function
+    s <- plsko_filter(scale(X), y$y, q = 0.05, nb.list = nb.list, ncomp = 12, sparsity = 1, seed = seed, offset = "both")
+    res <- data.frame(fdp = fdr(s$selected, y$Beta),
+                      tpp = pow(s$selected, y$Beta),
+                      fdp.plus = fdr(s$selected.plus, y$Beta),
+                      tpp.plus = pow(s$selected.plus, y$Beta),
+                      lam2 = paste0("c(", paste(lam2, collapse = ", "), ")" ),
+                      seed = seed)
+
+   return(res)
+  #}, error = function(e) list(error = e$message))
+}
+
+saveRDS(fac_quad_rho2_nb_res, "fac_quad_rho2_nb_res.rds")
+```
+
+```{r quad with nblist_plot}
+fac_quad_rho2_nb_res <- readRDS("fac_quad_rho2_nb_res.rds")
+fac_quad_rho2_nb <- do.call(rbind, lapply(fac_quad_rho2_nb_res, function(x){
+  if (!is.null(x)){
+    return(x)
+  }
+}))
+
+# for each lam2, draw the boxplot of the FDR
+fac_quad_rho2_nb$lam2 <- as.factor(fac_quad_rho2_nb$lam2)
+
+fdp_fac_quad_lam2_nb <- ggplot(fac_quad_rho2_nb, aes(x = lam2, y = fdp)) +
+            geom_boxplot() +
+            stat_summary(aes(group = 1), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak quadratic factor structure with neigbhour list: lam1 ~ U(1,2)",
+                 x = "lam2",
+                 y = "FDR") +
+            theme_minimal()
+
+tpp_fac_quad_lam2_nb <- ggplot(fac_quad_rho2_nb, aes(x = lam2, y = tpp)) +
+            geom_boxplot() +
+            #facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = 1), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "Weak quadratic factor structure with neigbhour list: lam1 ~ U(1,2)",
+                 x = "lam2",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_fac_quad_lam2_nb, tpp_fac_quad_lam2_nb, ncol = 2)
+
+fdp_plus_quad_fac_lam2_nb <- ggplot(fac_quad_rho2_nb, aes(x = lam2, y = fdp.plus)) +
+            geom_boxplot() +
+            #facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = 1), fun.y="mean", geom="line", color = "blue") +
+            geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
+            labs(title = "Weak quadratic factor structure with neigbhour list: lam1 ~ U(1,2)",
+                 x = "lam2",
+                 y = "FDR") +
+            theme_minimal()
+
+tpp_plus_quad_fac_lam2_nb <- ggplot(fac_quad_rho2_nb, aes(x = lam2, y = tpp.plus)) +
+            geom_boxplot() +
+            #facet_wrap(~lam2, scales = "free", labeller = "label_both", ncol = 1) +
+            stat_summary(aes(group = 1), fun.y="mean", geom="line", color = "blue") +
+            labs(title = "",
+                 x = "lam2",
+                 y = "TPP") +
+            theme_minimal()
+
+ggarrange(fdp_plus_quad_fac_lam2_nb, tpp_plus_quad_fac_lam2_nb, ncol = 2)
+
+```
+

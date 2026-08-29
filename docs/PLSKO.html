@@ -3498,13 +3498,8 @@ X &lt;- MASS::mvrnorm(n, mu = rep(0, p), Sigma = toeplitz(0.5^(0:(p-1))))
 
 covariates &lt;- MASS::mvrnorm(n, mu = rep(0, p_conf), Sigma = diag(1, p_conf)) # generate covariates
 
-
 # generate a continuous response variable from a linear model of X and covariate variables
-<<<<<<< HEAD
-nonzero = sample(1:p, k) # 19  70 100  51  59  81  52  91   3  55 
-=======
 nonzero = sample(1:p, k) # true signal: 19  70 100  51  59  81  52  91   3  55
->>>>>>> 09bc73b474c24e9dd9f8415fd9775568b87ec37a
 beta = a * (1:p %in% nonzero) / sqrt(n)
 y = X %*% beta + covariates %*% rnorm(p_conf) + rnorm(n)</code></pre>
 <p>Now we have a synthetic dataset with 100 samples, 100 variables, and
