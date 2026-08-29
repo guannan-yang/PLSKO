@@ -204,7 +204,7 @@ ko_withW <- function(W, q = 0.05, offset = 0, X.names = NULL){
   ratio = c(rep(0, p))
   ratio.plus = c(rep(0, p))
 
-  for (j in 1:p) {
+  for (j in 1:(p+1)) {
     if(offset==0){
       ratio[j] = (sum(W <= -t[j]))/max(1, sum(W >= t[j]))
     }
